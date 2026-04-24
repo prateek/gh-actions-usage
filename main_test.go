@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -148,6 +149,72 @@ func TestRunSummaryCommandReadsCache(t *testing.T) {
 	}
 }
 
+func TestImportCommandIsIdempotent(t *testing.T) {
+	cache := openTestCache(t)
+	defer cache.Close()
+
+	payload := ExportPayload{
+		ExportedAt: "2026-04-24T00:00:00Z",
+		Repos:      []Repo{{ID: 1, Owner: "octo", Name: "app", FullName: "octo/app", Private: true}},
+		Runs:       []RunRecord{{ID: 10, Repo: "octo/app", WorkflowName: "CI", WorkflowPath: "ci.yml", RunStartedAt: "2026-04-24T10:00:00Z", Conclusion: "success"}},
+		Jobs:       []JobRecord{{ID: 100, RunID: 10, Repo: "octo/app", WorkflowName: "CI", WorkflowPath: "ci.yml", Name: "test", StartedAt: "2026-04-24T10:00:00Z", CompletedAt: "2026-04-24T10:01:00Z", DurationSecs: 60, Runner: RunnerMetadata{Image: "ubuntu-latest", OS: "Linux", Arch: "unknown", Type: "github-hosted"}, Conclusion: "success"}},
+	}
+	path := filepath.Join(t.TempDir(), "export.json")
+	writeFixtureExport(t, path, payload)
+
+	var out bytes.Buffer
+	app := &App{stdout: &out, stderr: &bytes.Buffer{}, cache: cache, now: time.Now}
+	for i := 0; i < 2; i++ {
+		if err := app.Run(t.Context(), []string{"import", "--in", path, "--json"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stats, err := cache.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats["repos"] != 1 || stats["runs"] != 1 || stats["jobs"] != 1 {
+		t.Fatalf("stats = %#v, want one row per table", stats)
+	}
+}
+
+func TestExportCommandIncludesRepos(t *testing.T) {
+	cache := openTestCache(t)
+	defer cache.Close()
+
+	if err := cache.UpsertRepo(Repo{ID: 1, Owner: "octo", Name: "app", FullName: "octo/app", Private: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.UpsertRun(RunRecord{ID: 10, Repo: "octo/app", WorkflowName: "CI", WorkflowPath: "ci.yml", RunStartedAt: "2026-04-24T10:00:00Z", Conclusion: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.UpsertJob(JobRecord{ID: 100, RunID: 10, Repo: "octo/app", WorkflowName: "CI", WorkflowPath: "ci.yml", Name: "test", DurationSecs: 60, Runner: RunnerMetadata{Image: "ubuntu-latest"}, Conclusion: "success"}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "export.json")
+	var out bytes.Buffer
+	app := &App{stdout: &out, stderr: &bytes.Buffer{}, cache: cache, now: func() time.Time { return time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC) }}
+	if err := app.Run(t.Context(), []string{"export", "--out", path}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload ExportPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Repos) != 1 || payload.Repos[0].FullName != "octo/app" {
+		t.Fatalf("repos = %#v, want exported repo", payload.Repos)
+	}
+	if !strings.Contains(out.String(), "exported 1 repos, 1 runs, and 1 jobs") {
+		t.Fatalf("export output = %q", out.String())
+	}
+}
+
 func TestWebHandlerServesDashboardAndData(t *testing.T) {
 	cache := openTestCache(t)
 	defer cache.Close()
@@ -171,6 +238,17 @@ func TestWebHandlerServesDashboardAndData(t *testing.T) {
 	handler.ServeHTTP(jobs, httptest.NewRequest(http.MethodGet, "/api/jobs", nil))
 	if jobs.Code != http.StatusOK || !strings.Contains(jobs.Body.String(), "octo/app") {
 		t.Fatalf("bad jobs response: %d %s", jobs.Code, jobs.Body.String())
+	}
+}
+
+func writeFixtureExport(t *testing.T, path string, payload ExportPayload) {
+	t.Helper()
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

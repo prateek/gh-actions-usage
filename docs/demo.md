@@ -3,6 +3,9 @@
 This demo is designed to be repeatable. Ingest can be run multiple times against
 the same repository and date range; rows are upserted by GitHub IDs.
 
+For an executable transcript with captured command output and a browser
+screenshot, see [showboat-demo.md](showboat-demo.md).
+
 ## 1. Check Setup
 
 ```bash
@@ -96,10 +99,21 @@ Keyboard shortcuts:
 - `/` focuses search.
 - `t` toggles theme.
 
-## 6. Export
+## 6. Export and Import
 
 ```bash
 gh actions-usage export --out actions-usage-report.json
 ```
 
-The export includes cached runs and jobs. It does not refetch data.
+The export includes cached repositories, runs, and jobs. It does not refetch
+data.
+
+Import the same data into a fresh cache:
+
+```bash
+GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
+  gh actions-usage import --in actions-usage-report.json
+```
+
+The checked-in fixture at `testdata/demo-export.json` is safe for demos and e2e
+tests because it never calls GitHub.

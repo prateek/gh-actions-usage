@@ -2,8 +2,19 @@ BIN := gh-actions-usage
 PREFIX ?= $(HOME)/.local
 
 .PHONY: test
-test:
-	go test ./...
+test: test-unit test-integration test-e2e
+
+.PHONY: test-unit
+test-unit:
+	go test ./... -run '^Test(CreatedQuery|RepoUnmarshalCapturesOwnerAndRaw|RunnerMetadata|SummaryGroupsByWorkflowAndRunner)$$'
+
+.PHONY: test-integration
+test-integration:
+	go test ./... -run '^Test(CacheUpsertsAreIdempotent|RunSummaryCommandReadsCache|ImportCommandIsIdempotent|ExportCommandIncludesRepos|WebHandlerServesDashboardAndData)$$'
+
+.PHONY: test-e2e
+test-e2e:
+	scripts/e2e-fixture.sh
 
 .PHONY: build
 build:

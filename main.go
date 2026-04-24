@@ -69,13 +69,11 @@ type Repo struct {
 
 func (r *Repo) UnmarshalJSON(data []byte) error {
 	var aux struct {
-		ID       int64  `json:"id"`
-		Name     string `json:"name"`
-		FullName string `json:"full_name"`
-		Private  bool   `json:"private"`
-		Owner    struct {
-			Login string `json:"login"`
-		} `json:"owner"`
+		ID       int64           `json:"id"`
+		Name     string          `json:"name"`
+		FullName string          `json:"full_name"`
+		Private  bool            `json:"private"`
+		Owner    json.RawMessage `json:"owner"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
@@ -84,7 +82,16 @@ func (r *Repo) UnmarshalJSON(data []byte) error {
 	r.Name = aux.Name
 	r.FullName = aux.FullName
 	r.Private = aux.Private
-	r.Owner = aux.Owner.Login
+	var ownerString string
+	if err := json.Unmarshal(aux.Owner, &ownerString); err == nil {
+		r.Owner = ownerString
+	} else {
+		var ownerObject struct {
+			Login string `json:"login"`
+		}
+		_ = json.Unmarshal(aux.Owner, &ownerObject)
+		r.Owner = ownerObject.Login
+	}
 	if r.FullName == "" && r.Owner != "" && r.Name != "" {
 		r.FullName = r.Owner + "/" + r.Name
 	}
@@ -172,6 +179,20 @@ type IngestResult struct {
 	CachePath     string `json:"cache_path"`
 }
 
+type ImportResult struct {
+	ReposImported int    `json:"repos_imported"`
+	RunsImported  int    `json:"runs_imported"`
+	JobsImported  int    `json:"jobs_imported"`
+	CachePath     string `json:"cache_path"`
+}
+
+type ExportPayload struct {
+	ExportedAt string      `json:"exported_at"`
+	Runs       []RunRecord `json:"runs"`
+	Jobs       []JobRecord `json:"jobs"`
+	Repos      []Repo      `json:"repos,omitempty"`
+}
+
 type WorkflowRunAPI struct {
 	ID           int64  `json:"id"`
 	Name         string `json:"name"`
@@ -251,6 +272,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.cmdSummary(args[1:])
 	case "export":
 		return a.cmdExport(args[1:])
+	case "import":
+		return a.cmdImport(args[1:])
 	case "serve":
 		return a.cmdServe(args[1:])
 	case "api":
@@ -273,6 +296,7 @@ Usage:
   gh actions-usage summary [--group-by repo,workflow-path,job,runner-image] [--json]
   gh actions-usage runs list [--json]
   gh actions-usage jobs list [--limit 50] [--json]
+  gh actions-usage import --in report.json [--json]
   gh actions-usage serve [--listen 127.0.0.1:8080] [--open]
   gh actions-usage export --out report.json
   gh actions-usage api get /user
@@ -573,7 +597,11 @@ func (a *App) cmdExport(args []string) error {
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{"runs": runs, "jobs": jobs, "exported_at": a.now().Format(time.RFC3339)}
+	repos, err := a.cache.ListRepos()
+	if err != nil {
+		return err
+	}
+	payload := ExportPayload{Runs: runs, Jobs: jobs, Repos: repos, ExportedAt: a.now().Format(time.RFC3339)}
 	file, err := os.Create(*out)
 	if err != nil {
 		return err
@@ -584,7 +612,55 @@ func (a *App) cmdExport(args []string) error {
 	if err := enc.Encode(payload); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "exported %d runs and %d jobs to %s\n", len(runs), len(jobs), *out)
+	fmt.Fprintf(a.stdout, "exported %d repos, %d runs, and %d jobs to %s\n", len(repos), len(runs), len(jobs), *out)
+	return nil
+}
+
+func (a *App) cmdImport(args []string) error {
+	fs := flag.NewFlagSet("import", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	in := fs.String("in", "", "input export JSON file")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *in == "" {
+		return fmt.Errorf("--in is required")
+	}
+	file, err := os.Open(*in)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var payload ExportPayload
+	if err := json.NewDecoder(file).Decode(&payload); err != nil {
+		return err
+	}
+	result := ImportResult{CachePath: a.cache.Path()}
+	for _, repo := range payload.Repos {
+		if err := a.cache.UpsertRepo(repo); err != nil {
+			return err
+		}
+		result.ReposImported++
+	}
+	for _, run := range payload.Runs {
+		if err := a.cache.UpsertRun(run); err != nil {
+			return err
+		}
+		result.RunsImported++
+	}
+	for _, job := range payload.Jobs {
+		if err := a.cache.UpsertJob(job); err != nil {
+			return err
+		}
+		result.JobsImported++
+	}
+	if *jsonOut {
+		return writeJSON(a.stdout, result)
+	}
+	fmt.Fprintf(a.stdout, "imported %d repos, %d runs, %d jobs\n", result.ReposImported, result.RunsImported, result.JobsImported)
+	fmt.Fprintf(a.stdout, "cache: %s\n", result.CachePath)
 	return nil
 }
 
@@ -1247,6 +1323,27 @@ func (c *Cache) ListRuns(filters QueryFilters) ([]RunRecord, error) {
 		runs = append(runs, run)
 	}
 	return runs, rows.Err()
+}
+
+func (c *Cache) ListRepos() ([]Repo, error) {
+	rows, err := c.db.Query(`select id,owner,name,full_name,private,raw_json from repos order by full_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var repos []Repo
+	for rows.Next() {
+		var repo Repo
+		var private int
+		var raw string
+		if err := rows.Scan(&repo.ID, &repo.Owner, &repo.Name, &repo.FullName, &private, &raw); err != nil {
+			return nil, err
+		}
+		repo.Private = private == 1
+		repo.Raw = json.RawMessage(raw)
+		repos = append(repos, repo)
+	}
+	return repos, rows.Err()
 }
 
 func (c *Cache) ListJobs(filters QueryFilters) ([]JobRecord, error) {

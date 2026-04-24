@@ -66,6 +66,16 @@ Open the local dashboard:
 gh actions-usage serve --open
 ```
 
+From a checkout, try the offline fixture without touching GitHub:
+
+```bash
+GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
+  gh actions-usage import --in testdata/demo-export.json
+
+GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
+  gh actions-usage summary --group-by date,repo,workflow-path,runner-os,runner-image
+```
+
 ## Commands
 
 ```text
@@ -77,6 +87,7 @@ gh actions-usage summary [--group-by repo,workflow-path,job,runner-image] [--jso
 gh actions-usage runs list [--repo OWNER/NAME] [--limit 50] [--json]
 gh actions-usage jobs list [--repo OWNER/NAME] [--limit 50] [--json]
 gh actions-usage export --out report.json
+gh actions-usage import --in report.json [--json]
 gh actions-usage serve [--listen 127.0.0.1:8080] [--open]
 gh actions-usage api get /user
 gh actions-usage cache path|stats|clear
@@ -110,6 +121,7 @@ Examples:
 ```bash
 gh actions-usage jobs list --repo prateek/movies-do-app --limit 20 --json
 gh actions-usage summary --group-by repo,runner-os,runner-image --json
+gh actions-usage import --in actions-usage-report.json --json
 gh actions-usage cache stats
 ```
 
@@ -156,3 +168,4 @@ GH_ACTIONS_USAGE_CACHE="$(mktemp -t gh-actions-usage).db" \
 ```
 
 See [docs/demo.md](docs/demo.md) for a walkthrough.
+See [docs/showboat-demo.md](docs/showboat-demo.md) for a captured Showboat/Rodney demo with command output and a dashboard screenshot.
