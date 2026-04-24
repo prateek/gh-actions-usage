@@ -73,6 +73,20 @@ func TestRunnerMetadata(t *testing.T) {
 	}
 }
 
+func TestBillingUsageEndpointSupportsEnterpriseFilters(t *testing.T) {
+	got, err := billingUsageEndpoint(
+		accountContext{Kind: "enterprise", Login: "acme"},
+		BillingQueryFilters{Year: 2026, Month: 4, Organization: "demo-org", Repo: "demo-org/mobile", Product: "Actions", SKU: "actions_macos", CostCenterID: "none"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "enterprises/acme/settings/billing/usage?year=2026&month=4&organization=demo-org&repository=demo-org%2Fmobile&product=Actions&sku=actions_macos&cost_center_id=none"
+	if got != want {
+		t.Fatalf("endpoint = %q, want %q", got, want)
+	}
+}
+
 func TestDefaultCachePathUsesExplicitOverride(t *testing.T) {
 	t.Setenv("GH_ACTIONS_USAGE_CACHE", "/tmp/custom-cache.db")
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "xdg-cache"))
@@ -224,7 +238,7 @@ func TestReportCommandRefreshesAndSummarizes(t *testing.T) {
 		client: fakeActionsClient(),
 		now:    func() time.Time { return time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC) },
 	}
-	if err := app.Run(t.Context(), []string{"report", "--account", "@me", "--repo", "octo/app", "--since", "2026-04-01", "--json"}); err != nil {
+	if err := app.Run(t.Context(), []string{"report", "--account", "@me", "--repo", "octo/app", "--since", "2026-04-01", "--group-by", "repo,billing-owner", "--json"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -237,6 +251,53 @@ func TestReportCommandRefreshesAndSummarizes(t *testing.T) {
 	}
 	if payload.Summary.TotalJobs != 1 || payload.Summary.TotalMinutes != 2 {
 		t.Fatalf("summary = %#v, want one two-minute job", payload.Summary)
+	}
+	if payload.Summary.Groups[0].Values["billing-owner"] != "octo" {
+		t.Fatalf("summary groups = %#v, want billing owner attribution", payload.Summary.Groups)
+	}
+}
+
+func TestReportCommandRefreshesMultipleAccounts(t *testing.T) {
+	cache := openTestCache(t)
+	defer cache.Close()
+
+	var out bytes.Buffer
+	app := &App{
+		stdout: &out,
+		stderr: &bytes.Buffer{},
+		cache:  cache,
+		client: fakeActionsClient(),
+		now:    func() time.Time { return time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC) },
+	}
+	if err := app.Run(t.Context(), []string{
+		"report",
+		"--account", "@me,demo-org",
+		"--since", "2026-04-01",
+		"--account-plan", "octo=pro,demo-org=enterprise",
+		"--billing-owner", "demo-org=acme-enterprise",
+		"--billing-kind", "demo-org=enterprise",
+		"--group-by", "account,billing-owner,billing-owner-kind,billing-plan,repo-owner,repo",
+		"--json",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var payload ReportResult
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("report output is not JSON: %s", out.String())
+	}
+	if payload.Refresh.AccountsIngested != 2 || payload.Refresh.ReposIngested != 2 || payload.Summary.TotalJobs != 2 {
+		t.Fatalf("report = %#v, want two account refresh", payload)
+	}
+	groups := map[string]SummaryGroup{}
+	for _, group := range payload.Summary.Groups {
+		groups[group.Values["repo"]] = group
+	}
+	if groups["octo/app"].Values["billing-owner"] != "octo" || groups["octo/app"].Values["billing-plan"] != "pro" {
+		t.Fatalf("personal repo group = %#v", groups["octo/app"])
+	}
+	if groups["demo-org/mobile"].Values["billing-owner"] != "acme-enterprise" || groups["demo-org/mobile"].Values["billing-owner-kind"] != "enterprise" {
+		t.Fatalf("org repo group = %#v", groups["demo-org/mobile"])
 	}
 }
 
@@ -306,6 +367,49 @@ func TestDoctorIngestActionsRunsManualRefresh(t *testing.T) {
 	}
 }
 
+func TestBillingRefreshAndSummaryDistinguishesDiscounts(t *testing.T) {
+	cache := openTestCache(t)
+	defer cache.Close()
+
+	var out bytes.Buffer
+	app := &App{
+		stdout: &out,
+		stderr: &bytes.Buffer{},
+		cache:  cache,
+		client: fakeActionsClient(),
+		now:    func() time.Time { return time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC) },
+	}
+	if err := app.Run(t.Context(), []string{"billing", "refresh", "--account", "@me,demo-org", "--year", "2026", "--month", "4", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var refresh BillingRefreshResult
+	if err := json.Unmarshal(out.Bytes(), &refresh); err != nil {
+		t.Fatalf("billing refresh output is not JSON: %s", out.String())
+	}
+	if refresh.ItemsUpserted != 3 {
+		t.Fatalf("billing refresh = %#v, want three items", refresh)
+	}
+
+	out.Reset()
+	if err := app.Run(t.Context(), []string{"billing", "summary", "--group-by", "account,product,sku,cost-class", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	var summary BillingSummary
+	if err := json.Unmarshal(out.Bytes(), &summary); err != nil {
+		t.Fatalf("billing summary output is not JSON: %s", out.String())
+	}
+	classes := map[string]bool{}
+	for _, group := range summary.Groups {
+		classes[group.Values["cost-class"]] = true
+	}
+	for _, want := range []string{"paid", "discounted", "free"} {
+		if !classes[want] {
+			t.Fatalf("billing classes = %#v, missing %s in %#v", classes, want, summary.Groups)
+		}
+	}
+}
+
 func TestServeRefreshRequiresAPIClient(t *testing.T) {
 	cache := openTestCache(t)
 	defer cache.Close()
@@ -326,6 +430,9 @@ func TestImportCommandIsIdempotent(t *testing.T) {
 		Repos:      []Repo{{ID: 1, Owner: "octo", Name: "app", FullName: "octo/app", Private: true}},
 		Runs:       []RunRecord{{ID: 10, Repo: "octo/app", WorkflowName: "CI", WorkflowPath: "ci.yml", RunStartedAt: "2026-04-24T10:00:00Z", Conclusion: "success"}},
 		Jobs:       []JobRecord{{ID: 100, RunID: 10, Repo: "octo/app", WorkflowName: "CI", WorkflowPath: "ci.yml", Name: "test", StartedAt: "2026-04-24T10:00:00Z", CompletedAt: "2026-04-24T10:01:00Z", DurationSecs: 60, Runner: RunnerMetadata{Image: "ubuntu-latest", OS: "Linux", Arch: "unknown", Type: "github-hosted"}, Conclusion: "success"}},
+		BillingUsage: []BillingUsageRecord{
+			{Key: "billing-1", Account: "octo", AccountKind: "user", Date: "2026-04-01", Product: "Actions", SKU: "actions_linux", CostClass: "paid", GrossAmount: 1, NetAmount: 1},
+		},
 	}
 	path := filepath.Join(t.TempDir(), "export.json")
 	writeFixtureExport(t, path, payload)
@@ -341,7 +448,7 @@ func TestImportCommandIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats["repos"] != 1 || stats["runs"] != 1 || stats["jobs"] != 1 {
+	if stats["repos"] != 1 || stats["runs"] != 1 || stats["jobs"] != 1 || stats["billing_usage"] != 1 {
 		t.Fatalf("stats = %#v, want one row per table", stats)
 	}
 }
@@ -357,6 +464,9 @@ func TestExportCommandIncludesRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := cache.UpsertJob(JobRecord{ID: 100, RunID: 10, Repo: "octo/app", WorkflowName: "CI", WorkflowPath: "ci.yml", Name: "test", DurationSecs: 60, Runner: RunnerMetadata{Image: "ubuntu-latest"}, Conclusion: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.UpsertBillingUsage(BillingUsageRecord{Key: "billing-1", Account: "octo", AccountKind: "user", Date: "2026-04-01", Product: "Actions", SKU: "actions_linux", CostClass: "paid", GrossAmount: 1, NetAmount: 1}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -378,7 +488,10 @@ func TestExportCommandIncludesRepos(t *testing.T) {
 	if len(payload.Repos) != 1 || payload.Repos[0].FullName != "octo/app" {
 		t.Fatalf("repos = %#v, want exported repo", payload.Repos)
 	}
-	if !strings.Contains(out.String(), "exported 1 repos, 1 runs, and 1 jobs") {
+	if len(payload.BillingUsage) != 1 || payload.BillingUsage[0].Product != "Actions" {
+		t.Fatalf("billing usage = %#v, want exported billing row", payload.BillingUsage)
+	}
+	if !strings.Contains(out.String(), "exported 1 repos, 1 runs, 1 jobs, and 1 billing rows") {
 		t.Fatalf("export output = %q", out.String())
 	}
 }
@@ -461,8 +574,11 @@ func openTestCache(t *testing.T) *Cache {
 func fakeActionsClient() *fakeClient {
 	return &fakeClient{responses: map[string]string{
 		"user": `{"login":"octo"}`,
-		"user/repos?visibility=all&affiliation=owner,collaborator,organization_member&sort=full_name": `[
-			{"id":1,"name":"app","full_name":"octo/app","private":false,"owner":{"login":"octo"}}
+		"user/repos?visibility=all&affiliation=owner&sort=full_name": `[
+			{"id":1,"name":"app","full_name":"octo/app","private":false,"owner":{"login":"octo","type":"User"}}
+		]`,
+		"orgs/demo-org/repos?type=all&sort=full_name": `[
+			{"id":2,"name":"mobile","full_name":"demo-org/mobile","private":true,"owner":{"login":"demo-org","type":"Organization"}}
 		]`,
 		"repos/octo/app/actions/runs?per_page=100&created=%3E%3D2026-04-01": `{"workflow_runs":[
 			{"id":10,"name":"CI","workflow_id":11,"run_number":1,"run_attempt":1,"event":"push","head_branch":"main","status":"completed","conclusion":"success","created_at":"2026-04-24T10:00:00Z","run_started_at":"2026-04-24T10:00:00Z","html_url":"https://github.com/octo/app/actions/runs/10","actor":{"login":"octocat"}}
@@ -473,6 +589,20 @@ func fakeActionsClient() *fakeClient {
 		"repos/octo/app/actions/workflows/11": `{"path":".github/workflows/ci.yml"}`,
 		"repos/octo/app/actions/runs/10/jobs?filter=all&per_page=100": `{"jobs":[
 			{"id":100,"run_id":10,"name":"test","status":"completed","conclusion":"success","started_at":"2026-04-24T10:00:00Z","completed_at":"2026-04-24T10:02:00Z","html_url":"https://github.com/octo/app/actions/runs/10/job/100","runner_name":"GitHub Actions 1","runner_group_name":"GitHub Actions","labels":["ubuntu-latest"]}
+		]}`,
+		"repos/demo-org/mobile/actions/runs?per_page=100&created=%3E%3D2026-04-01": `{"workflow_runs":[
+			{"id":20,"name":"Mobile CI","workflow_id":21,"run_number":8,"run_attempt":1,"event":"push","head_branch":"main","status":"completed","conclusion":"success","created_at":"2026-04-24T11:00:00Z","run_started_at":"2026-04-24T11:00:00Z","html_url":"https://github.com/demo-org/mobile/actions/runs/20","actor":{"login":"octocat"}}
+		]}`,
+		"repos/demo-org/mobile/actions/workflows/21": `{"path":".github/workflows/mobile.yml"}`,
+		"repos/demo-org/mobile/actions/runs/20/jobs?filter=all&per_page=100": `{"jobs":[
+			{"id":200,"run_id":20,"name":"ios","status":"completed","conclusion":"success","started_at":"2026-04-24T11:00:00Z","completed_at":"2026-04-24T11:05:00Z","html_url":"https://github.com/demo-org/mobile/actions/runs/20/job/200","runner_name":"GitHub Actions 2","runner_group_name":"GitHub Actions","labels":["macos-15","ARM64"]}
+		]}`,
+		"users/octo/settings/billing/usage?year=2026&month=4": `{"usageItems":[
+			{"date":"2026-04-01","product":"Actions","sku":"actions_macos","quantity":10,"unitType":"minutes","pricePerUnit":0.08,"grossAmount":0.80,"discountAmount":0,"netAmount":0.80,"repositoryName":"octo/app"}
+		]}`,
+		"organizations/demo-org/settings/billing/usage?year=2026&month=4": `{"usageItems":[
+			{"date":"2026-04-01","product":"Actions","sku":"actions_linux","quantity":100,"unitType":"minutes","pricePerUnit":0.008,"grossAmount":0.80,"discountAmount":0.80,"netAmount":0,"organizationName":"demo-org","repositoryName":"demo-org/mobile"},
+			{"date":"2026-04-02","product":"Codespaces","sku":"codespaces_compute","quantity":1,"unitType":"hours","pricePerUnit":0,"grossAmount":0,"discountAmount":0,"netAmount":0,"organizationName":"demo-org"}
 		]}`,
 	}}
 }

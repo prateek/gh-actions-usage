@@ -1,11 +1,11 @@
 # gh-actions-usage
 
-A GitHub CLI extension for cached GitHub Actions usage analysis.
+A GitHub CLI extension for cached GitHub Actions and billing usage analysis.
 
-It loads workflow runs and jobs into a local SQLite cache, then lets you query
-that cache repeatedly without burning GitHub API rate limit. The embedded web UI
-includes an agentsview-style dashboard with a flamegraph, duration histogram,
-filters, and slowest-job table.
+It loads workflow runs, jobs, and billing usage into a local SQLite cache, then
+lets you query that cache repeatedly without burning GitHub API rate limit. The
+embedded web UI includes an agentsview-style dashboard with a flamegraph,
+duration histogram, filters, and slowest-job table.
 
 ## Install
 
@@ -53,6 +53,25 @@ gh actions-usage report \
   --since 2026-04-01
 ```
 
+Generate an account-attributed report across personal and org accounts:
+
+```bash
+gh actions-usage report \
+  --account @me,my-org \
+  --since 2026-04-01 \
+  --account-plan prateek=pro,my-org=enterprise \
+  --billing-owner my-org=my-enterprise \
+  --billing-kind my-org=enterprise \
+  --group-by account,billing-owner,billing-owner-kind,billing-plan,repo,runner-image
+```
+
+Refresh billing usage and summarize paid versus discounted rows:
+
+```bash
+gh actions-usage billing refresh --account @me,my-org,enterprise:my-enterprise --year 2026 --month 4
+gh actions-usage billing summary --group-by account,product,sku,cost-class
+```
+
 Slice cached jobs without hitting GitHub:
 
 ```bash
@@ -87,7 +106,9 @@ GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
 gh actions-usage doctor [--json]
 gh actions-usage accounts list [--json]
 gh actions-usage repos list --account @me|ORG [--json]
-gh actions-usage report --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
+gh actions-usage report --account @me|ORG[,ORG...] [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
+gh actions-usage billing refresh --account @me|ORG|enterprise:SLUG[,...] [--year YYYY] [--month M] [--json]
+gh actions-usage billing summary [--group-by account,product,sku,cost-class] [--json]
 gh actions-usage summary [--group-by repo,workflow-path,job,runner-image] [--json]
 gh actions-usage runs list [--repo OWNER/NAME] [--limit 50] [--json]
 gh actions-usage jobs list [--repo OWNER/NAME] [--limit 50] [--json]
@@ -118,6 +139,8 @@ base-directory paths.
 Repeated refreshes are idempotent. Repositories, runs, and jobs are upserted
 by stable GitHub IDs. Raw GitHub JSON is retained in the cache alongside parsed
 fields so future versions can add new views without refetching old data.
+Billing usage rows are upserted by a deterministic account/product/repo/date
+key because GitHub billing usage items do not expose stable item IDs.
 
 `report` and `serve --refresh` update the cache before reading it. `summary`,
 `runs list`, `jobs list`, and `serve` without `--refresh` read only cached data.
@@ -128,6 +151,28 @@ gh actions-usage doctor ingest actions \
   --account @me \
   --repo OWNER/REPO \
   --since YYYY-MM-DD
+```
+
+Billing refreshes call GitHub's billing usage endpoints for the account level
+you request: user, organization, or enterprise. Those endpoints return usage
+billed to that account, so account choice matters when Copilot or Actions usage
+is billed through an org or enterprise. See GitHub's
+[billing usage API docs](https://docs.github.com/en/rest/billing/usage) for the
+current permissions and endpoint availability.
+
+Useful Actions group dimensions:
+
+```text
+account, repo, repo-owner, repo-owner-kind, billing-owner,
+billing-owner-kind, billing-plan, cost-class, date, workflow-path, job,
+runner-type, runner-os, runner-arch, runner-image, platform, conclusion
+```
+
+Useful billing group dimensions:
+
+```text
+account, account-kind, date, year, month, product, sku, unit-type, model,
+organization, repo, cost-center-id, cost-class
 ```
 
 ## JSON Policy
@@ -141,6 +186,8 @@ Examples:
 gh actions-usage jobs list --repo prateek/movies-do-app --limit 20 --json
 gh actions-usage report --account @me --repo prateek/movies-do-app --since 2026-04-01 --json
 gh actions-usage summary --group-by repo,runner-os,runner-image --json
+gh actions-usage billing refresh --account @me,prateek-labs --year 2026 --month 4 --json
+gh actions-usage billing summary --group-by account,product,sku,cost-class --json
 gh actions-usage import --in actions-usage-report.json --json
 gh actions-usage cache stats
 ```

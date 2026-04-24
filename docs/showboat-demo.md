@@ -28,6 +28,7 @@ cache=/tmp/gh-actions-usage-showboat-import.db
   "jobs_imported": 7
 }
 {
+  "billing_usage": 0,
   "jobs": 7,
   "repos": 2,
   "runs": 3

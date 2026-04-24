@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
 	"encoding/json"
@@ -59,12 +60,17 @@ type Account struct {
 }
 
 type Repo struct {
-	ID       int64           `json:"id"`
-	Owner    string          `json:"owner"`
-	Name     string          `json:"name"`
-	FullName string          `json:"full_name"`
-	Private  bool            `json:"private"`
-	Raw      json.RawMessage `json:"raw,omitempty"`
+	ID               int64           `json:"id"`
+	Account          string          `json:"account,omitempty"`
+	Owner            string          `json:"owner"`
+	OwnerKind        string          `json:"owner_kind,omitempty"`
+	Name             string          `json:"name"`
+	FullName         string          `json:"full_name"`
+	Private          bool            `json:"private"`
+	BillingOwner     string          `json:"billing_owner,omitempty"`
+	BillingOwnerKind string          `json:"billing_owner_kind,omitempty"`
+	BillingPlan      string          `json:"billing_plan,omitempty"`
+	Raw              json.RawMessage `json:"raw,omitempty"`
 }
 
 func (r *Repo) UnmarshalJSON(data []byte) error {
@@ -88,9 +94,11 @@ func (r *Repo) UnmarshalJSON(data []byte) error {
 	} else {
 		var ownerObject struct {
 			Login string `json:"login"`
+			Type  string `json:"type"`
 		}
 		_ = json.Unmarshal(aux.Owner, &ownerObject)
 		r.Owner = ownerObject.Login
+		r.OwnerKind = normalizeAccountKind(ownerObject.Type)
 	}
 	if r.FullName == "" && r.Owner != "" && r.Name != "" {
 		r.FullName = r.Owner + "/" + r.Name
@@ -100,42 +108,55 @@ func (r *Repo) UnmarshalJSON(data []byte) error {
 }
 
 type RunRecord struct {
-	ID           int64           `json:"id"`
-	Repo         string          `json:"repo"`
-	WorkflowID   int64           `json:"workflow_id"`
-	WorkflowName string          `json:"workflow_name"`
-	WorkflowPath string          `json:"workflow_path"`
-	RunNumber    int64           `json:"run_number"`
-	RunAttempt   int64           `json:"run_attempt"`
-	Event        string          `json:"event"`
-	Branch       string          `json:"branch"`
-	Actor        string          `json:"actor"`
-	Status       string          `json:"status"`
-	Conclusion   string          `json:"conclusion"`
-	CreatedAt    string          `json:"created_at"`
-	RunStartedAt string          `json:"run_started_at"`
-	HTMLURL      string          `json:"html_url"`
-	Raw          json.RawMessage `json:"raw,omitempty"`
+	ID               int64           `json:"id"`
+	Account          string          `json:"account,omitempty"`
+	Repo             string          `json:"repo"`
+	RepoOwner        string          `json:"repo_owner,omitempty"`
+	RepoOwnerKind    string          `json:"repo_owner_kind,omitempty"`
+	BillingOwner     string          `json:"billing_owner,omitempty"`
+	BillingOwnerKind string          `json:"billing_owner_kind,omitempty"`
+	BillingPlan      string          `json:"billing_plan,omitempty"`
+	WorkflowID       int64           `json:"workflow_id"`
+	WorkflowName     string          `json:"workflow_name"`
+	WorkflowPath     string          `json:"workflow_path"`
+	RunNumber        int64           `json:"run_number"`
+	RunAttempt       int64           `json:"run_attempt"`
+	Event            string          `json:"event"`
+	Branch           string          `json:"branch"`
+	Actor            string          `json:"actor"`
+	Status           string          `json:"status"`
+	Conclusion       string          `json:"conclusion"`
+	CreatedAt        string          `json:"created_at"`
+	RunStartedAt     string          `json:"run_started_at"`
+	HTMLURL          string          `json:"html_url"`
+	Raw              json.RawMessage `json:"raw,omitempty"`
 }
 
 type JobRecord struct {
-	ID           int64           `json:"id"`
-	RunID        int64           `json:"run_id"`
-	Repo         string          `json:"repo"`
-	WorkflowName string          `json:"workflow_name"`
-	WorkflowPath string          `json:"workflow_path"`
-	Name         string          `json:"name"`
-	Status       string          `json:"status"`
-	Conclusion   string          `json:"conclusion"`
-	StartedAt    string          `json:"started_at"`
-	CompletedAt  string          `json:"completed_at"`
-	DurationSecs float64         `json:"duration_seconds"`
-	RunnerName   string          `json:"runner_name"`
-	RunnerGroup  string          `json:"runner_group"`
-	Runner       RunnerMetadata  `json:"runner"`
-	Labels       []string        `json:"labels"`
-	HTMLURL      string          `json:"html_url"`
-	Raw          json.RawMessage `json:"raw,omitempty"`
+	ID               int64           `json:"id"`
+	RunID            int64           `json:"run_id"`
+	Account          string          `json:"account,omitempty"`
+	Repo             string          `json:"repo"`
+	RepoOwner        string          `json:"repo_owner,omitempty"`
+	RepoOwnerKind    string          `json:"repo_owner_kind,omitempty"`
+	BillingOwner     string          `json:"billing_owner,omitempty"`
+	BillingOwnerKind string          `json:"billing_owner_kind,omitempty"`
+	BillingPlan      string          `json:"billing_plan,omitempty"`
+	CostClass        string          `json:"cost_class,omitempty"`
+	WorkflowName     string          `json:"workflow_name"`
+	WorkflowPath     string          `json:"workflow_path"`
+	Name             string          `json:"name"`
+	Status           string          `json:"status"`
+	Conclusion       string          `json:"conclusion"`
+	StartedAt        string          `json:"started_at"`
+	CompletedAt      string          `json:"completed_at"`
+	DurationSecs     float64         `json:"duration_seconds"`
+	RunnerName       string          `json:"runner_name"`
+	RunnerGroup      string          `json:"runner_group"`
+	Runner           RunnerMetadata  `json:"runner"`
+	Labels           []string        `json:"labels"`
+	HTMLURL          string          `json:"html_url"`
+	Raw              json.RawMessage `json:"raw,omitempty"`
 }
 
 type SummaryGroup struct {
@@ -171,20 +192,24 @@ type QueryFilters struct {
 }
 
 type IngestResult struct {
-	Account       string `json:"account"`
-	ReposSeen     int    `json:"repos_seen"`
-	ReposIngested int    `json:"repos_ingested"`
-	RunsUpserted  int    `json:"runs_upserted"`
-	JobsUpserted  int    `json:"jobs_upserted"`
-	CachePath     string `json:"cache_path"`
+	Account          string `json:"account"`
+	AccountsIngested int    `json:"accounts_ingested,omitempty"`
+	ReposSeen        int    `json:"repos_seen"`
+	ReposIngested    int    `json:"repos_ingested"`
+	RunsUpserted     int    `json:"runs_upserted"`
+	JobsUpserted     int    `json:"jobs_upserted"`
+	CachePath        string `json:"cache_path"`
 }
 
 type IngestOptions struct {
-	Account    string
-	RepoFilter string
-	Since      string
-	Until      string
-	Days       int
+	Account       string
+	RepoFilter    string
+	Since         string
+	Until         string
+	Days          int
+	AccountPlans  map[string]string
+	BillingOwners map[string]string
+	BillingKinds  map[string]string
 }
 
 type ReportResult struct {
@@ -192,18 +217,96 @@ type ReportResult struct {
 	Summary Summary      `json:"summary"`
 }
 
+type BillingUsageRecord struct {
+	Key              string          `json:"key"`
+	Account          string          `json:"account"`
+	AccountKind      string          `json:"account_kind"`
+	Date             string          `json:"date,omitempty"`
+	Year             int             `json:"year,omitempty"`
+	Month            int             `json:"month,omitempty"`
+	Day              int             `json:"day,omitempty"`
+	Product          string          `json:"product,omitempty"`
+	SKU              string          `json:"sku,omitempty"`
+	UnitType         string          `json:"unit_type,omitempty"`
+	Model            string          `json:"model,omitempty"`
+	OrganizationName string          `json:"organization_name,omitempty"`
+	RepositoryName   string          `json:"repository_name,omitempty"`
+	CostCenterID     string          `json:"cost_center_id,omitempty"`
+	CostClass        string          `json:"cost_class"`
+	Quantity         float64         `json:"quantity,omitempty"`
+	GrossQuantity    float64         `json:"gross_quantity,omitempty"`
+	DiscountQuantity float64         `json:"discount_quantity,omitempty"`
+	NetQuantity      float64         `json:"net_quantity,omitempty"`
+	PricePerUnit     float64         `json:"price_per_unit,omitempty"`
+	GrossAmount      float64         `json:"gross_amount,omitempty"`
+	DiscountAmount   float64         `json:"discount_amount,omitempty"`
+	NetAmount        float64         `json:"net_amount,omitempty"`
+	Raw              json.RawMessage `json:"raw,omitempty"`
+}
+
+type BillingQueryFilters struct {
+	Account      string `json:"account,omitempty"`
+	Repo         string `json:"repo,omitempty"`
+	Since        string `json:"since,omitempty"`
+	Until        string `json:"until,omitempty"`
+	Year         int    `json:"year,omitempty"`
+	Month        int    `json:"month,omitempty"`
+	Day          int    `json:"day,omitempty"`
+	Product      string `json:"product,omitempty"`
+	SKU          string `json:"sku,omitempty"`
+	Organization string `json:"organization,omitempty"`
+	CostCenterID string `json:"cost_center_id,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+}
+
+type BillingRefreshResult struct {
+	AccountsRefreshed int      `json:"accounts_refreshed"`
+	Accounts          []string `json:"accounts"`
+	ItemsUpserted     int      `json:"items_upserted"`
+	CachePath         string   `json:"cache_path"`
+}
+
+type BillingSummaryGroup struct {
+	Key              string            `json:"key"`
+	Values           map[string]string `json:"values"`
+	Items            int               `json:"items"`
+	GrossQuantity    float64           `json:"gross_quantity"`
+	DiscountQuantity float64           `json:"discount_quantity"`
+	NetQuantity      float64           `json:"net_quantity"`
+	GrossAmount      float64           `json:"gross_amount"`
+	DiscountAmount   float64           `json:"discount_amount"`
+	NetAmount        float64           `json:"net_amount"`
+}
+
+type BillingSummary struct {
+	GeneratedAt      string                `json:"generated_at"`
+	CachePath        string                `json:"cache_path"`
+	Filters          BillingQueryFilters   `json:"filters"`
+	TotalItems       int                   `json:"total_items"`
+	GrossQuantity    float64               `json:"gross_quantity"`
+	DiscountQuantity float64               `json:"discount_quantity"`
+	NetQuantity      float64               `json:"net_quantity"`
+	GrossAmount      float64               `json:"gross_amount"`
+	DiscountAmount   float64               `json:"discount_amount"`
+	NetAmount        float64               `json:"net_amount"`
+	GroupBy          []string              `json:"group_by,omitempty"`
+	Groups           []BillingSummaryGroup `json:"groups,omitempty"`
+}
+
 type ImportResult struct {
-	ReposImported int    `json:"repos_imported"`
-	RunsImported  int    `json:"runs_imported"`
-	JobsImported  int    `json:"jobs_imported"`
-	CachePath     string `json:"cache_path"`
+	ReposImported   int    `json:"repos_imported"`
+	RunsImported    int    `json:"runs_imported"`
+	JobsImported    int    `json:"jobs_imported"`
+	BillingImported int    `json:"billing_imported,omitempty"`
+	CachePath       string `json:"cache_path"`
 }
 
 type ExportPayload struct {
-	ExportedAt string      `json:"exported_at"`
-	Runs       []RunRecord `json:"runs"`
-	Jobs       []JobRecord `json:"jobs"`
-	Repos      []Repo      `json:"repos,omitempty"`
+	ExportedAt   string               `json:"exported_at"`
+	Runs         []RunRecord          `json:"runs"`
+	Jobs         []JobRecord          `json:"jobs"`
+	Repos        []Repo               `json:"repos,omitempty"`
+	BillingUsage []BillingUsageRecord `json:"billing_usage,omitempty"`
 }
 
 type WorkflowRunAPI struct {
@@ -277,6 +380,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.cmdRepos(ctx, args[1:])
 	case "report":
 		return a.cmdReport(ctx, args[1:])
+	case "billing":
+		return a.cmdBilling(ctx, args[1:])
 	case "runs":
 		return a.cmdRuns(args[1:])
 	case "jobs":
@@ -299,13 +404,15 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func printHelp(w io.Writer) {
-	fmt.Fprintln(w, `gh actions-usage: cached GitHub Actions usage analytics
+	fmt.Fprintln(w, `gh actions-usage: cached GitHub Actions and billing usage analytics
 
 Usage:
   gh actions-usage doctor [--json]
   gh actions-usage accounts list [--json]
   gh actions-usage repos list --account @me|ORG [--json]
-  gh actions-usage report --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
+  gh actions-usage report --account @me|ORG[,ORG...] [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
+  gh actions-usage billing refresh --account @me|ORG|enterprise:SLUG[,...] [--year YYYY] [--month M] [--json]
+  gh actions-usage billing summary [--group-by account,product,sku,cost-class] [--json]
   gh actions-usage summary [--group-by repo,workflow-path,job,runner-image] [--json]
   gh actions-usage runs list [--json]
   gh actions-usage jobs list [--limit 50] [--json]
@@ -315,7 +422,7 @@ Usage:
   gh actions-usage api get /user
   gh actions-usage cache path|stats|clear
 
-Reports refresh cached Actions data before summarizing it. Cached reads use the local SQLite cache.`)
+Reports refresh cached Actions data before summarizing it. Billing refreshes use GitHub billing usage APIs. Cached reads use the local SQLite cache.`)
 }
 
 func (a *App) cmdDoctor(ctx context.Context, args []string) error {
@@ -458,11 +565,17 @@ func (a *App) cmdDoctorIngest(ctx context.Context, args []string) error {
 	since := fs.String("since", "", "start date YYYY-MM-DD")
 	until := fs.String("until", "", "end date YYYY-MM-DD")
 	days := fs.Int("days", 30, "days back when --since is absent")
+	var accountPlans keyValueFlag
+	var billingOwners keyValueFlag
+	var billingKinds keyValueFlag
+	fs.Var(&accountPlans, "account-plan", "comma-separated ACCOUNT=PLAN annotations")
+	fs.Var(&billingOwners, "billing-owner", "comma-separated ACCOUNT=BILLING_OWNER overrides")
+	fs.Var(&billingKinds, "billing-kind", "comma-separated ACCOUNT=user|org|enterprise overrides")
 	jsonOut := fs.Bool("json", false, "print JSON")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	result, _, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days})
+	result, _, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
 	if err != nil {
 		return err
 	}
@@ -483,11 +596,17 @@ func (a *App) cmdReport(ctx context.Context, args []string) error {
 	until := fs.String("until", "", "end date YYYY-MM-DD")
 	days := fs.Int("days", 30, "days back when --since is absent")
 	groupBy := fs.String("group-by", "repo,workflow-path,job,runner-image", "comma-separated dimensions")
+	var accountPlans keyValueFlag
+	var billingOwners keyValueFlag
+	var billingKinds keyValueFlag
+	fs.Var(&accountPlans, "account-plan", "comma-separated ACCOUNT=PLAN annotations")
+	fs.Var(&billingOwners, "billing-owner", "comma-separated ACCOUNT=BILLING_OWNER overrides")
+	fs.Var(&billingKinds, "billing-kind", "comma-separated ACCOUNT=user|org|enterprise overrides")
 	jsonOut := fs.Bool("json", false, "print JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days})
+	result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
 	if err != nil {
 		return err
 	}
@@ -507,6 +626,292 @@ func (a *App) cmdReport(ctx context.Context, args []string) error {
 	return nil
 }
 
+func (a *App) cmdBilling(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: billing refresh|summary")
+	}
+	switch args[0] {
+	case "refresh":
+		return a.cmdBillingRefresh(ctx, args[1:])
+	case "summary":
+		return a.cmdBillingSummary(args[1:])
+	default:
+		return fmt.Errorf("usage: billing refresh|summary")
+	}
+}
+
+func (a *App) cmdBillingRefresh(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("billing refresh", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	account := fs.String("account", "@me", "billing account selectors: @me, ORG, org:ORG, user:LOGIN, enterprise:SLUG")
+	year := fs.Int("year", 0, "usage year")
+	month := fs.Int("month", 0, "usage month")
+	day := fs.Int("day", 0, "usage day")
+	repo := fs.String("repo", "", "repository filter for supported endpoints")
+	product := fs.String("product", "", "product filter for supported endpoints")
+	sku := fs.String("sku", "", "SKU filter for supported endpoints")
+	organization := fs.String("organization", "", "enterprise organization filter")
+	costCenterID := fs.String("cost-center-id", "", "enterprise cost center filter")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if a.client == nil {
+		return fmt.Errorf("GitHub API client unavailable; run `gh auth login`")
+	}
+	filters := BillingQueryFilters{Year: *year, Month: *month, Day: *day, Repo: *repo, Product: *product, SKU: *sku, Organization: *organization, CostCenterID: *costCenterID}
+	accounts, err := a.billingAccountContexts(ctx, *account)
+	if err != nil {
+		return err
+	}
+	result := BillingRefreshResult{AccountsRefreshed: len(accounts), CachePath: a.cache.Path()}
+	for _, account := range accounts {
+		result.Accounts = append(result.Accounts, account.Login)
+		records, err := a.fetchBillingUsage(ctx, account, filters)
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			if err := a.cache.UpsertBillingUsage(record); err != nil {
+				return err
+			}
+			result.ItemsUpserted++
+		}
+	}
+	if *jsonOut {
+		return writeJSON(a.stdout, result)
+	}
+	fmt.Fprintf(a.stdout, "ingested %d billing items across %d accounts\n", result.ItemsUpserted, result.AccountsRefreshed)
+	fmt.Fprintf(a.stdout, "cache: %s\n", result.CachePath)
+	return nil
+}
+
+func (a *App) cmdBillingSummary(args []string) error {
+	fs := flag.NewFlagSet("billing summary", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	groupBy := fs.String("group-by", "account,product,sku,cost-class", "comma-separated dimensions")
+	account := fs.String("account", "", "billing account filter")
+	repo := fs.String("repo", "", "repository filter")
+	since := fs.String("since", "", "start date")
+	until := fs.String("until", "", "end date")
+	product := fs.String("product", "", "product filter")
+	sku := fs.String("sku", "", "SKU filter")
+	limit := fs.Int("limit", 0, "maximum rows")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	filters := BillingQueryFilters{Account: *account, Repo: *repo, Since: *since, Until: *until, Product: *product, SKU: *sku, Limit: *limit}
+	records, err := a.cache.ListBillingUsage(filters)
+	if err != nil {
+		return err
+	}
+	summary := buildBillingSummary(a.cache.Path(), records, filters, splitCSV(*groupBy), a.now())
+	if *jsonOut {
+		return writeJSON(a.stdout, summary)
+	}
+	printBillingSummary(a.stdout, summary)
+	return nil
+}
+
+func (a *App) fetchBillingUsage(ctx context.Context, account accountContext, filters BillingQueryFilters) ([]BillingUsageRecord, error) {
+	_ = ctx
+	endpoint, err := billingUsageEndpoint(account, filters)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		UsageItems []json.RawMessage `json:"usageItems"`
+	}
+	if err := a.client.Get(endpoint, &response); err != nil {
+		return nil, err
+	}
+	records := make([]BillingUsageRecord, 0, len(response.UsageItems))
+	for _, item := range response.UsageItems {
+		record := parseBillingUsageItem(item, account, filters)
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func billingUsageEndpoint(account accountContext, filters BillingQueryFilters) (string, error) {
+	var base string
+	switch account.Kind {
+	case "user":
+		base = "users/" + url.PathEscape(account.Login) + "/settings/billing/usage"
+	case "org":
+		base = "organizations/" + url.PathEscape(account.Login) + "/settings/billing/usage"
+	case "enterprise":
+		base = "enterprises/" + url.PathEscape(account.Login) + "/settings/billing/usage"
+	default:
+		return "", fmt.Errorf("unsupported billing account kind %q", account.Kind)
+	}
+	params := orderedQueryParams{
+		{"year", strconv.Itoa(filters.Year), filters.Year != 0},
+		{"month", strconv.Itoa(filters.Month), filters.Month != 0},
+		{"day", strconv.Itoa(filters.Day), filters.Day != 0},
+		{"organization", filters.Organization, filters.Organization != ""},
+		{"repository", filters.Repo, filters.Repo != ""},
+		{"product", filters.Product, filters.Product != ""},
+		{"sku", filters.SKU, filters.SKU != ""},
+		{"cost_center_id", filters.CostCenterID, filters.CostCenterID != ""},
+	}
+	return appendOrderedQuery(base, params), nil
+}
+
+type orderedQueryParam struct {
+	Key     string
+	Value   string
+	Include bool
+}
+
+type orderedQueryParams []orderedQueryParam
+
+func appendOrderedQuery(base string, params orderedQueryParams) string {
+	values := make([]string, 0, len(params))
+	for _, param := range params {
+		if !param.Include {
+			continue
+		}
+		values = append(values, url.QueryEscape(param.Key)+"="+url.QueryEscape(param.Value))
+	}
+	if len(values) == 0 {
+		return base
+	}
+	return base + "?" + strings.Join(values, "&")
+}
+
+func parseBillingUsageItem(data json.RawMessage, account accountContext, filters BillingQueryFilters) BillingUsageRecord {
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(data, &raw)
+	record := BillingUsageRecord{
+		Account:          account.Login,
+		AccountKind:      account.Kind,
+		Date:             rawString(raw, "date"),
+		Year:             filters.Year,
+		Month:            filters.Month,
+		Day:              filters.Day,
+		Product:          rawString(raw, "product", "productName"),
+		SKU:              rawString(raw, "sku", "skuName"),
+		UnitType:         rawString(raw, "unitType", "unit_type"),
+		Model:            rawString(raw, "model"),
+		OrganizationName: rawString(raw, "organizationName", "organization_name", "organization"),
+		RepositoryName:   rawString(raw, "repositoryName", "repository_name", "repository"),
+		CostCenterID:     rawString(raw, "costCenterId", "costCenterID", "cost_center_id"),
+		Quantity:         rawFloat(raw, "quantity"),
+		GrossQuantity:    rawFloat(raw, "grossQuantity", "gross_quantity"),
+		DiscountQuantity: rawFloat(raw, "discountQuantity", "discount_quantity"),
+		NetQuantity:      rawFloat(raw, "netQuantity", "net_quantity"),
+		PricePerUnit:     rawFloat(raw, "pricePerUnit", "price_per_unit"),
+		GrossAmount:      rawFloat(raw, "grossAmount", "gross_amount"),
+		DiscountAmount:   rawFloat(raw, "discountAmount", "discount_amount"),
+		NetAmount:        rawFloat(raw, "netAmount", "net_amount"),
+		Raw:              append(json.RawMessage(nil), data...),
+	}
+	if record.Year == 0 || record.Month == 0 || record.Day == 0 {
+		year, month, day := dateParts(record.Date)
+		if record.Year == 0 {
+			record.Year = year
+		}
+		if record.Month == 0 {
+			record.Month = month
+		}
+		if record.Day == 0 {
+			record.Day = day
+		}
+	}
+	if record.GrossQuantity == 0 {
+		record.GrossQuantity = record.Quantity
+	}
+	if record.NetQuantity == 0 && record.DiscountQuantity == 0 {
+		record.NetQuantity = record.Quantity
+	}
+	record.CostClass = billingCostClass(record)
+	record.Key = billingUsageKey(record)
+	return record
+}
+
+func rawString(raw map[string]json.RawMessage, keys ...string) string {
+	for _, key := range keys {
+		if data, ok := raw[key]; ok {
+			var value string
+			if err := json.Unmarshal(data, &value); err == nil {
+				return value
+			}
+			var number json.Number
+			if err := json.Unmarshal(data, &number); err == nil {
+				return number.String()
+			}
+		}
+	}
+	return ""
+}
+
+func rawFloat(raw map[string]json.RawMessage, keys ...string) float64 {
+	for _, key := range keys {
+		data, ok := raw[key]
+		if !ok {
+			continue
+		}
+		var value float64
+		if err := json.Unmarshal(data, &value); err == nil {
+			return value
+		}
+		var text string
+		if err := json.Unmarshal(data, &text); err == nil {
+			parsed, _ := strconv.ParseFloat(text, 64)
+			return parsed
+		}
+	}
+	return 0
+}
+
+func dateParts(value string) (int, int, int) {
+	if value == "" {
+		return 0, 0, 0
+	}
+	t, err := time.Parse(dateFormat, dateOnly(value))
+	if err != nil {
+		return 0, 0, 0
+	}
+	return t.Year(), int(t.Month()), t.Day()
+}
+
+func billingCostClass(record BillingUsageRecord) string {
+	switch {
+	case record.NetAmount > 0 && record.DiscountAmount > 0:
+		return "discounted"
+	case record.NetAmount > 0:
+		return "paid"
+	case record.NetAmount == 0 && record.DiscountAmount > 0:
+		return "discounted"
+	case record.GrossAmount == 0 && record.NetAmount == 0:
+		return "free"
+	default:
+		return "unknown"
+	}
+}
+
+func billingUsageKey(record BillingUsageRecord) string {
+	parts := []string{
+		record.AccountKind,
+		record.Account,
+		record.Date,
+		strconv.Itoa(record.Year),
+		strconv.Itoa(record.Month),
+		strconv.Itoa(record.Day),
+		record.Product,
+		record.SKU,
+		record.Model,
+		record.UnitType,
+		record.OrganizationName,
+		record.RepositoryName,
+		record.CostCenterID,
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return fmt.Sprintf("%x", sum)
+}
+
 func (a *App) refreshActions(ctx context.Context, options IngestOptions) (IngestResult, []Repo, error) {
 	if a.client == nil {
 		return IngestResult{}, nil, fmt.Errorf("GitHub API client unavailable; run `gh auth login`")
@@ -522,16 +927,35 @@ func (a *App) refreshActions(ctx context.Context, options IngestOptions) (Ingest
 		return IngestResult{}, nil, err
 	}
 
-	repos, err := a.fetchRepos(ctx, options.Account)
+	accounts, err := a.actionAccountContexts(ctx, options.Account)
 	if err != nil {
 		return IngestResult{}, nil, err
 	}
-	selected := filterRepos(repos, options.RepoFilter)
+	result := IngestResult{Account: options.Account, AccountsIngested: len(accounts), CachePath: a.cache.Path()}
+	selectedByRepo := map[string]Repo{}
+	for _, account := range accounts {
+		repos, err := a.fetchReposForAccount(ctx, account)
+		if err != nil {
+			return IngestResult{}, nil, err
+		}
+		result.ReposSeen += len(repos)
+		for _, repo := range filterRepos(repos, options.RepoFilter) {
+			repo = annotateRepo(repo, account, options)
+			if _, seen := selectedByRepo[repo.FullName]; seen {
+				continue
+			}
+			selectedByRepo[repo.FullName] = repo
+		}
+	}
+	selected := make([]Repo, 0, len(selectedByRepo))
+	for _, repo := range selectedByRepo {
+		selected = append(selected, repo)
+	}
+	sort.Slice(selected, func(i, j int) bool { return selected[i].FullName < selected[j].FullName })
 	if len(selected) == 0 {
 		return IngestResult{}, nil, fmt.Errorf("no repositories matched")
 	}
-
-	result := IngestResult{Account: options.Account, ReposSeen: len(repos), ReposIngested: len(selected), CachePath: a.cache.Path()}
+	result.ReposIngested = len(selected)
 	for _, repo := range selected {
 		if err := a.cache.UpsertRepo(repo); err != nil {
 			return IngestResult{}, nil, err
@@ -546,6 +970,7 @@ func (a *App) refreshActions(ctx context.Context, options IngestOptions) (Ingest
 				workflowPaths[run.WorkflowID] = a.fetchWorkflowPath(repo, run.WorkflowID)
 			}
 			run.WorkflowPath = workflowPaths[run.WorkflowID]
+			run = annotateRun(run, repo)
 			if err := a.cache.UpsertRun(run); err != nil {
 				return IngestResult{}, nil, err
 			}
@@ -556,6 +981,7 @@ func (a *App) refreshActions(ctx context.Context, options IngestOptions) (Ingest
 				return IngestResult{}, nil, err
 			}
 			for _, job := range jobs {
+				job = annotateJob(job, repo)
 				if err := a.cache.UpsertJob(job); err != nil {
 					return IngestResult{}, nil, err
 				}
@@ -564,6 +990,143 @@ func (a *App) refreshActions(ctx context.Context, options IngestOptions) (Ingest
 		}
 	}
 	return result, selected, nil
+}
+
+type accountContext struct {
+	Selector string
+	Login    string
+	Kind     string
+}
+
+func (a *App) actionAccountContexts(ctx context.Context, raw string) ([]accountContext, error) {
+	_ = ctx
+	selectors := splitCSV(raw)
+	if len(selectors) == 0 {
+		selectors = []string{"@me"}
+	}
+	var accounts []accountContext
+	for _, selector := range selectors {
+		kind, login := parseAccountSelector(selector)
+		switch kind {
+		case "user":
+			if selector != "@me" {
+				return nil, fmt.Errorf("Actions refresh can inspect @me or organizations; got %q", selector)
+			}
+			resolved, err := a.currentUserLogin()
+			if err != nil {
+				return nil, err
+			}
+			accounts = append(accounts, accountContext{Selector: selector, Login: resolved, Kind: "user"})
+		case "org":
+			accounts = append(accounts, accountContext{Selector: selector, Login: login, Kind: "org"})
+		default:
+			return nil, fmt.Errorf("Actions refresh does not support %s accounts", kind)
+		}
+	}
+	return accounts, nil
+}
+
+func (a *App) billingAccountContexts(ctx context.Context, raw string) ([]accountContext, error) {
+	_ = ctx
+	selectors := splitCSV(raw)
+	if len(selectors) == 0 {
+		selectors = []string{"@me"}
+	}
+	var accounts []accountContext
+	for _, selector := range selectors {
+		kind, login := parseAccountSelector(selector)
+		if selector == "@me" {
+			resolved, err := a.currentUserLogin()
+			if err != nil {
+				return nil, err
+			}
+			login = resolved
+		}
+		accounts = append(accounts, accountContext{Selector: selector, Login: login, Kind: kind})
+	}
+	return accounts, nil
+}
+
+func parseAccountSelector(selector string) (string, string) {
+	selector = strings.TrimSpace(selector)
+	switch {
+	case selector == "" || selector == "@me":
+		return "user", "@me"
+	case strings.Contains(selector, ":"):
+		prefix, login, _ := strings.Cut(selector, ":")
+		return normalizeAccountKind(prefix), strings.TrimSpace(login)
+	case strings.Contains(selector, "/"):
+		prefix, login, _ := strings.Cut(selector, "/")
+		return normalizeAccountKind(prefix), strings.TrimSpace(login)
+	default:
+		return "org", selector
+	}
+}
+
+func (a *App) currentUserLogin() (string, error) {
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := a.client.Get("user", &user); err != nil {
+		return "", err
+	}
+	if user.Login == "" {
+		return "", fmt.Errorf("GitHub API did not return a user login")
+	}
+	return user.Login, nil
+}
+
+func annotateRepo(repo Repo, account accountContext, options IngestOptions) Repo {
+	repo.Account = account.Login
+	repo.OwnerKind = firstNonEmpty(normalizeAccountKind(repo.OwnerKind), inferRepoOwnerKind(repo, account), "unknown")
+	repo.BillingOwner = firstNonEmpty(lookupOverride(options.BillingOwners, account.Selector, account.Login, repo.Owner, repo.FullName), account.Login)
+	repo.BillingOwnerKind = firstNonEmpty(lookupOverride(options.BillingKinds, account.Selector, account.Login, repo.Owner, repo.FullName), account.Kind)
+	repo.BillingPlan = lookupOverride(options.AccountPlans, account.Selector, account.Login, repo.Owner, repo.BillingOwner, repo.FullName)
+	return repo
+}
+
+func annotateRun(run RunRecord, repo Repo) RunRecord {
+	run.Account = repo.Account
+	run.RepoOwner = repo.Owner
+	run.RepoOwnerKind = repo.OwnerKind
+	run.BillingOwner = repo.BillingOwner
+	run.BillingOwnerKind = repo.BillingOwnerKind
+	run.BillingPlan = repo.BillingPlan
+	return run
+}
+
+func annotateJob(job JobRecord, repo Repo) JobRecord {
+	job.Account = repo.Account
+	job.RepoOwner = repo.Owner
+	job.RepoOwnerKind = repo.OwnerKind
+	job.BillingOwner = repo.BillingOwner
+	job.BillingOwnerKind = repo.BillingOwnerKind
+	job.BillingPlan = repo.BillingPlan
+	job.CostClass = actionCostClass(repo, job)
+	return job
+}
+
+func inferRepoOwnerKind(repo Repo, account accountContext) string {
+	if repo.Owner != "" && strings.EqualFold(repo.Owner, account.Login) {
+		return account.Kind
+	}
+	return ""
+}
+
+func actionCostClass(repo Repo, job JobRecord) string {
+	if strings.EqualFold(job.Runner.Type, "self-hosted") {
+		return "external"
+	}
+	if !repo.Private {
+		return "free"
+	}
+	if repo.BillingOwnerKind == "enterprise" || strings.Contains(strings.ToLower(repo.BillingPlan), "enterprise") {
+		return "enterprise"
+	}
+	if repo.BillingPlan != "" {
+		return "paid"
+	}
+	return "unknown"
 }
 
 func (a *App) cmdRuns(args []string) error {
@@ -663,7 +1226,11 @@ func (a *App) cmdExport(args []string) error {
 	if err != nil {
 		return err
 	}
-	payload := ExportPayload{Runs: runs, Jobs: jobs, Repos: repos, ExportedAt: a.now().Format(time.RFC3339)}
+	billing, err := a.cache.ListBillingUsage(BillingQueryFilters{})
+	if err != nil {
+		return err
+	}
+	payload := ExportPayload{Runs: runs, Jobs: jobs, Repos: repos, BillingUsage: billing, ExportedAt: a.now().Format(time.RFC3339)}
 	file, err := os.Create(*out)
 	if err != nil {
 		return err
@@ -673,6 +1240,10 @@ func (a *App) cmdExport(args []string) error {
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(payload); err != nil {
 		return err
+	}
+	if len(billing) > 0 {
+		fmt.Fprintf(a.stdout, "exported %d repos, %d runs, %d jobs, and %d billing rows to %s\n", len(repos), len(runs), len(jobs), len(billing), *out)
+		return nil
 	}
 	fmt.Fprintf(a.stdout, "exported %d repos, %d runs, and %d jobs to %s\n", len(repos), len(runs), len(jobs), *out)
 	return nil
@@ -718,10 +1289,20 @@ func (a *App) cmdImport(args []string) error {
 		}
 		result.JobsImported++
 	}
+	for _, record := range payload.BillingUsage {
+		if err := a.cache.UpsertBillingUsage(record); err != nil {
+			return err
+		}
+		result.BillingImported++
+	}
 	if *jsonOut {
 		return writeJSON(a.stdout, result)
 	}
-	fmt.Fprintf(a.stdout, "imported %d repos, %d runs, %d jobs\n", result.ReposImported, result.RunsImported, result.JobsImported)
+	if result.BillingImported > 0 {
+		fmt.Fprintf(a.stdout, "imported %d repos, %d runs, %d jobs, %d billing rows\n", result.ReposImported, result.RunsImported, result.JobsImported, result.BillingImported)
+	} else {
+		fmt.Fprintf(a.stdout, "imported %d repos, %d runs, %d jobs\n", result.ReposImported, result.RunsImported, result.JobsImported)
+	}
 	fmt.Fprintf(a.stdout, "cache: %s\n", result.CachePath)
 	return nil
 }
@@ -737,11 +1318,17 @@ func (a *App) cmdServe(ctx context.Context, args []string) error {
 	since := fs.String("since", "", "start date YYYY-MM-DD")
 	until := fs.String("until", "", "end date YYYY-MM-DD")
 	days := fs.Int("days", 30, "days back when --since is absent")
+	var accountPlans keyValueFlag
+	var billingOwners keyValueFlag
+	var billingKinds keyValueFlag
+	fs.Var(&accountPlans, "account-plan", "comma-separated ACCOUNT=PLAN annotations")
+	fs.Var(&billingOwners, "billing-owner", "comma-separated ACCOUNT=BILLING_OWNER overrides")
+	fs.Var(&billingKinds, "billing-kind", "comma-separated ACCOUNT=user|org|enterprise overrides")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *refresh {
-		result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days})
+		result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
 		if err != nil {
 			return err
 		}
@@ -810,16 +1397,25 @@ func (a *App) fetchRepos(ctx context.Context, account string) ([]Repo, error) {
 		return nil, fmt.Errorf("GitHub API client unavailable; run `gh auth login`")
 	}
 	if account == "@me" {
-		var user struct {
-			Login string `json:"login"`
-		}
-		if err := a.client.Get("user", &user); err != nil {
+		login, err := a.currentUserLogin()
+		if err != nil {
 			return nil, err
 		}
-		account = user.Login
-		return fetchPaged[Repo](a.client, "user/repos?visibility=all&affiliation=owner,collaborator,organization_member&sort=full_name")
+		return a.fetchReposForAccount(ctx, accountContext{Selector: "@me", Login: login, Kind: "user"})
 	}
-	return fetchPaged[Repo](a.client, "orgs/"+url.PathEscape(account)+"/repos?type=all&sort=full_name")
+	return a.fetchReposForAccount(ctx, accountContext{Selector: account, Login: account, Kind: "org"})
+}
+
+func (a *App) fetchReposForAccount(ctx context.Context, account accountContext) ([]Repo, error) {
+	_ = ctx
+	switch account.Kind {
+	case "user":
+		return fetchPaged[Repo](a.client, "user/repos?visibility=all&affiliation=owner&sort=full_name")
+	case "org":
+		return fetchPaged[Repo](a.client, "orgs/"+url.PathEscape(account.Login)+"/repos?type=all&sort=full_name")
+	default:
+		return nil, fmt.Errorf("repository listing does not support %s accounts", account.Kind)
+	}
 }
 
 func (a *App) fetchRuns(ctx context.Context, repo Repo, created string) ([]RunRecord, error) {
@@ -1066,6 +1662,63 @@ func splitCSV(value string) []string {
 	return out
 }
 
+type keyValueFlag map[string]string
+
+func (f keyValueFlag) String() string {
+	if len(f) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(f))
+	for key := range f {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+f[key])
+	}
+	return strings.Join(parts, ",")
+}
+
+func (f *keyValueFlag) Set(value string) error {
+	if *f == nil {
+		*f = keyValueFlag{}
+	}
+	for _, part := range splitCSV(value) {
+		key, val, ok := strings.Cut(part, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return fmt.Errorf("expected KEY=VALUE, got %q", part)
+		}
+		(*f)[strings.TrimSpace(key)] = strings.TrimSpace(val)
+	}
+	return nil
+}
+
+func lookupOverride(values map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		if value := values[key]; value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeAccountKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "user", "personal":
+		return "user"
+	case "org", "organization":
+		return "org"
+	case "enterprise", "business":
+		return "enterprise"
+	default:
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
+}
+
 func runnerMetadata(labels []string) RunnerMetadata {
 	meta := RunnerMetadata{Type: "github-hosted", OS: "unknown", Arch: "unknown", Image: "unknown"}
 	for _, label := range labels {
@@ -1177,12 +1830,86 @@ func summarize(jobs []JobRecord, groupBy []string) []SummaryGroup {
 	return out
 }
 
+func buildBillingSummary(cachePath string, records []BillingUsageRecord, filters BillingQueryFilters, groupBy []string, now time.Time) BillingSummary {
+	summary := BillingSummary{
+		GeneratedAt: now.Format(time.RFC3339),
+		CachePath:   cachePath,
+		Filters:     filters,
+		GroupBy:     groupBy,
+		TotalItems:  len(records),
+	}
+	for _, record := range records {
+		summary.GrossQuantity += record.GrossQuantity
+		summary.DiscountQuantity += record.DiscountQuantity
+		summary.NetQuantity += record.NetQuantity
+		summary.GrossAmount += record.GrossAmount
+		summary.DiscountAmount += record.DiscountAmount
+		summary.NetAmount += record.NetAmount
+	}
+	summary.Groups = summarizeBilling(records, groupBy)
+	return summary
+}
+
+func summarizeBilling(records []BillingUsageRecord, groupBy []string) []BillingSummaryGroup {
+	if len(groupBy) == 0 {
+		return nil
+	}
+	groups := map[string]*BillingSummaryGroup{}
+	for _, record := range records {
+		values := map[string]string{}
+		keyParts := make([]string, 0, len(groupBy))
+		for _, dim := range groupBy {
+			value := billingDimension(record, dim)
+			values[dim] = value
+			keyParts = append(keyParts, value)
+		}
+		key := strings.Join(keyParts, "\t")
+		group := groups[key]
+		if group == nil {
+			group = &BillingSummaryGroup{Key: key, Values: values}
+			groups[key] = group
+		}
+		group.Items++
+		group.GrossQuantity += record.GrossQuantity
+		group.DiscountQuantity += record.DiscountQuantity
+		group.NetQuantity += record.NetQuantity
+		group.GrossAmount += record.GrossAmount
+		group.DiscountAmount += record.DiscountAmount
+		group.NetAmount += record.NetAmount
+	}
+	out := make([]BillingSummaryGroup, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, *group)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].NetAmount == out[j].NetAmount {
+			return out[i].Key < out[j].Key
+		}
+		return out[i].NetAmount > out[j].NetAmount
+	})
+	return out
+}
+
 func dimension(job JobRecord, dim string) string {
 	switch dim {
+	case "account":
+		return firstNonEmpty(job.Account, "unknown")
 	case "date":
 		return dateOnly(job.StartedAt)
 	case "repo":
 		return firstNonEmpty(job.Repo, "unknown")
+	case "repo-owner":
+		return firstNonEmpty(job.RepoOwner, ownerFromRepo(job.Repo), "unknown")
+	case "repo-owner-kind":
+		return firstNonEmpty(job.RepoOwnerKind, "unknown")
+	case "billing-owner":
+		return firstNonEmpty(job.BillingOwner, job.RepoOwner, ownerFromRepo(job.Repo), "unknown")
+	case "billing-owner-kind":
+		return firstNonEmpty(job.BillingOwnerKind, "unknown")
+	case "billing-plan", "plan":
+		return firstNonEmpty(job.BillingPlan, "unknown")
+	case "cost-class":
+		return firstNonEmpty(job.CostClass, "unknown")
 	case "workflow", "workflow-name":
 		return firstNonEmpty(job.WorkflowName, "unknown")
 	case "workflow-path":
@@ -1208,6 +1935,53 @@ func dimension(job JobRecord, dim string) string {
 	default:
 		return "unknown"
 	}
+}
+
+func billingDimension(record BillingUsageRecord, dim string) string {
+	switch dim {
+	case "account":
+		return firstNonEmpty(record.Account, "unknown")
+	case "account-kind":
+		return firstNonEmpty(record.AccountKind, "unknown")
+	case "date":
+		return firstNonEmpty(record.Date, "unknown")
+	case "year":
+		if record.Year == 0 {
+			return "unknown"
+		}
+		return strconv.Itoa(record.Year)
+	case "month":
+		if record.Month == 0 {
+			return "unknown"
+		}
+		return fmt.Sprintf("%04d-%02d", record.Year, record.Month)
+	case "product":
+		return firstNonEmpty(record.Product, "unknown")
+	case "sku":
+		return firstNonEmpty(record.SKU, "unknown")
+	case "unit", "unit-type":
+		return firstNonEmpty(record.UnitType, "unknown")
+	case "model":
+		return firstNonEmpty(record.Model, "unknown")
+	case "org", "organization":
+		return firstNonEmpty(record.OrganizationName, "unknown")
+	case "repo", "repository":
+		return firstNonEmpty(record.RepositoryName, "unknown")
+	case "cost-center", "cost-center-id":
+		return firstNonEmpty(record.CostCenterID, "unknown")
+	case "cost-class":
+		return firstNonEmpty(record.CostClass, "unknown")
+	default:
+		return "unknown"
+	}
+}
+
+func ownerFromRepo(repo string) string {
+	owner, _, ok := strings.Cut(repo, "/")
+	if !ok {
+		return ""
+	}
+	return owner
 }
 
 func countRuns(jobs []JobRecord) int {
@@ -1243,6 +2017,29 @@ func printSummary(w io.Writer, summary Summary) {
 			row = append(row, group.Values[dim])
 		}
 		row = append(row, strconv.Itoa(group.Jobs), fmt.Sprintf("%.1f", group.TotalMinutes), formatDuration(group.AverageSecs), formatDuration(group.LongestSecs))
+		fmt.Fprintln(tw, strings.Join(row, "\t"))
+	}
+	tw.Flush()
+}
+
+func printBillingSummary(w io.Writer, summary BillingSummary) {
+	fmt.Fprintf(w, "items: %d\n", summary.TotalItems)
+	fmt.Fprintf(w, "gross: $%.2f\n", summary.GrossAmount)
+	fmt.Fprintf(w, "discount: $%.2f\n", summary.DiscountAmount)
+	fmt.Fprintf(w, "net: $%.2f\n", summary.NetAmount)
+	if len(summary.Groups) == 0 {
+		return
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	header := append([]string{}, summary.GroupBy...)
+	header = append(header, "items", "gross", "discount", "net")
+	fmt.Fprintln(tw, strings.Join(header, "\t"))
+	for _, group := range summary.Groups {
+		row := make([]string, 0, len(summary.GroupBy)+4)
+		for _, dim := range summary.GroupBy {
+			row = append(row, group.Values[dim])
+		}
+		row = append(row, strconv.Itoa(group.Items), fmt.Sprintf("$%.2f", group.GrossAmount), fmt.Sprintf("$%.2f", group.DiscountAmount), fmt.Sprintf("$%.2f", group.NetAmount))
 		fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
 	tw.Flush()
@@ -1324,15 +2121,26 @@ func (c *Cache) init() error {
 		`create table if not exists repos (
 			full_name text primary key,
 			id integer,
+			account text,
 			owner text,
+			owner_kind text,
 			name text,
 			private integer,
+			billing_owner text,
+			billing_owner_kind text,
+			billing_plan text,
 			raw_json text,
 			updated_at text default current_timestamp
 		)`,
 		`create table if not exists runs (
 			id integer primary key,
+			account text,
 			repo text,
+			repo_owner text,
+			repo_owner_kind text,
+			billing_owner text,
+			billing_owner_kind text,
+			billing_plan text,
 			workflow_id integer,
 			workflow_name text,
 			workflow_path text,
@@ -1352,7 +2160,14 @@ func (c *Cache) init() error {
 		`create table if not exists jobs (
 			id integer primary key,
 			run_id integer,
+			account text,
 			repo text,
+			repo_owner text,
+			repo_owner_kind text,
+			billing_owner text,
+			billing_owner_kind text,
+			billing_plan text,
+			cost_class text,
 			workflow_name text,
 			workflow_path text,
 			name text,
@@ -1372,11 +2187,71 @@ func (c *Cache) init() error {
 			raw_json text,
 			updated_at text default current_timestamp
 		)`,
+		`create table if not exists billing_usage (
+			key text primary key,
+			account text,
+			account_kind text,
+			date text,
+			year integer,
+			month integer,
+			day integer,
+			product text,
+			sku text,
+			unit_type text,
+			model text,
+			organization_name text,
+			repository_name text,
+			cost_center_id text,
+			cost_class text,
+			quantity real,
+			gross_quantity real,
+			discount_quantity real,
+			net_quantity real,
+			price_per_unit real,
+			gross_amount real,
+			discount_amount real,
+			net_amount real,
+			raw_json text,
+			updated_at text default current_timestamp
+		)`,
 		`create index if not exists idx_jobs_repo_started on jobs(repo, started_at)`,
 		`create index if not exists idx_runs_repo_started on runs(repo, run_started_at)`,
+		`create index if not exists idx_billing_usage_account_date on billing_usage(account, date)`,
 	}
 	for _, stmt := range statements {
 		if _, err := c.db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return c.ensureColumns()
+}
+
+func (c *Cache) ensureColumns() error {
+	columns := []struct {
+		table string
+		def   string
+	}{
+		{"repos", "account text"},
+		{"repos", "owner_kind text"},
+		{"repos", "billing_owner text"},
+		{"repos", "billing_owner_kind text"},
+		{"repos", "billing_plan text"},
+		{"runs", "account text"},
+		{"runs", "repo_owner text"},
+		{"runs", "repo_owner_kind text"},
+		{"runs", "billing_owner text"},
+		{"runs", "billing_owner_kind text"},
+		{"runs", "billing_plan text"},
+		{"jobs", "account text"},
+		{"jobs", "repo_owner text"},
+		{"jobs", "repo_owner_kind text"},
+		{"jobs", "billing_owner text"},
+		{"jobs", "billing_owner_kind text"},
+		{"jobs", "billing_plan text"},
+		{"jobs", "cost_class text"},
+	}
+	for _, column := range columns {
+		if _, err := c.db.Exec("alter table " + column.table + " add column " + column.def); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 			return err
 		}
 	}
@@ -1385,34 +2260,34 @@ func (c *Cache) init() error {
 
 func (c *Cache) UpsertRepo(repo Repo) error {
 	raw, _ := json.Marshal(repo)
-	_, err := c.db.Exec(`insert into repos(full_name,id,owner,name,private,raw_json,updated_at)
-		values(?,?,?,?,?,?,current_timestamp)
-		on conflict(full_name) do update set id=excluded.id, owner=excluded.owner, name=excluded.name, private=excluded.private, raw_json=excluded.raw_json, updated_at=current_timestamp`,
-		repo.FullName, repo.ID, repo.Owner, repo.Name, boolInt(repo.Private), string(firstRaw(repo.Raw, raw)))
+	_, err := c.db.Exec(`insert into repos(full_name,id,account,owner,owner_kind,name,private,billing_owner,billing_owner_kind,billing_plan,raw_json,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
+		on conflict(full_name) do update set id=excluded.id, account=excluded.account, owner=excluded.owner, owner_kind=excluded.owner_kind, name=excluded.name, private=excluded.private, billing_owner=excluded.billing_owner, billing_owner_kind=excluded.billing_owner_kind, billing_plan=excluded.billing_plan, raw_json=excluded.raw_json, updated_at=current_timestamp`,
+		repo.FullName, repo.ID, repo.Account, repo.Owner, repo.OwnerKind, repo.Name, boolInt(repo.Private), repo.BillingOwner, repo.BillingOwnerKind, repo.BillingPlan, string(firstRaw(repo.Raw, raw)))
 	return err
 }
 
 func (c *Cache) UpsertRun(run RunRecord) error {
 	raw, _ := json.Marshal(run)
-	_, err := c.db.Exec(`insert into runs(id,repo,workflow_id,workflow_name,workflow_path,run_number,run_attempt,event,branch,actor,status,conclusion,created_at,run_started_at,html_url,raw_json,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
-		on conflict(id) do update set repo=excluded.repo, workflow_id=excluded.workflow_id, workflow_name=excluded.workflow_name, workflow_path=excluded.workflow_path, run_number=excluded.run_number, run_attempt=excluded.run_attempt, event=excluded.event, branch=excluded.branch, actor=excluded.actor, status=excluded.status, conclusion=excluded.conclusion, created_at=excluded.created_at, run_started_at=excluded.run_started_at, html_url=excluded.html_url, raw_json=excluded.raw_json, updated_at=current_timestamp`,
-		run.ID, run.Repo, run.WorkflowID, run.WorkflowName, run.WorkflowPath, run.RunNumber, run.RunAttempt, run.Event, run.Branch, run.Actor, run.Status, run.Conclusion, run.CreatedAt, run.RunStartedAt, run.HTMLURL, string(firstRaw(run.Raw, raw)))
+	_, err := c.db.Exec(`insert into runs(id,account,repo,repo_owner,repo_owner_kind,billing_owner,billing_owner_kind,billing_plan,workflow_id,workflow_name,workflow_path,run_number,run_attempt,event,branch,actor,status,conclusion,created_at,run_started_at,html_url,raw_json,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
+		on conflict(id) do update set account=excluded.account, repo=excluded.repo, repo_owner=excluded.repo_owner, repo_owner_kind=excluded.repo_owner_kind, billing_owner=excluded.billing_owner, billing_owner_kind=excluded.billing_owner_kind, billing_plan=excluded.billing_plan, workflow_id=excluded.workflow_id, workflow_name=excluded.workflow_name, workflow_path=excluded.workflow_path, run_number=excluded.run_number, run_attempt=excluded.run_attempt, event=excluded.event, branch=excluded.branch, actor=excluded.actor, status=excluded.status, conclusion=excluded.conclusion, created_at=excluded.created_at, run_started_at=excluded.run_started_at, html_url=excluded.html_url, raw_json=excluded.raw_json, updated_at=current_timestamp`,
+		run.ID, run.Account, run.Repo, run.RepoOwner, run.RepoOwnerKind, run.BillingOwner, run.BillingOwnerKind, run.BillingPlan, run.WorkflowID, run.WorkflowName, run.WorkflowPath, run.RunNumber, run.RunAttempt, run.Event, run.Branch, run.Actor, run.Status, run.Conclusion, run.CreatedAt, run.RunStartedAt, run.HTMLURL, string(firstRaw(run.Raw, raw)))
 	return err
 }
 
 func (c *Cache) UpsertJob(job JobRecord) error {
 	labels, _ := json.Marshal(job.Labels)
 	raw, _ := json.Marshal(job)
-	_, err := c.db.Exec(`insert into jobs(id,run_id,repo,workflow_name,workflow_path,name,status,conclusion,started_at,completed_at,duration_seconds,runner_name,runner_group,runner_type,runner_os,runner_arch,runner_image,labels_json,html_url,raw_json,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
-		on conflict(id) do update set run_id=excluded.run_id, repo=excluded.repo, workflow_name=excluded.workflow_name, workflow_path=excluded.workflow_path, name=excluded.name, status=excluded.status, conclusion=excluded.conclusion, started_at=excluded.started_at, completed_at=excluded.completed_at, duration_seconds=excluded.duration_seconds, runner_name=excluded.runner_name, runner_group=excluded.runner_group, runner_type=excluded.runner_type, runner_os=excluded.runner_os, runner_arch=excluded.runner_arch, runner_image=excluded.runner_image, labels_json=excluded.labels_json, html_url=excluded.html_url, raw_json=excluded.raw_json, updated_at=current_timestamp`,
-		job.ID, job.RunID, job.Repo, job.WorkflowName, job.WorkflowPath, job.Name, job.Status, job.Conclusion, job.StartedAt, job.CompletedAt, job.DurationSecs, job.RunnerName, job.RunnerGroup, job.Runner.Type, job.Runner.OS, job.Runner.Arch, job.Runner.Image, string(labels), job.HTMLURL, string(firstRaw(job.Raw, raw)))
+	_, err := c.db.Exec(`insert into jobs(id,run_id,account,repo,repo_owner,repo_owner_kind,billing_owner,billing_owner_kind,billing_plan,cost_class,workflow_name,workflow_path,name,status,conclusion,started_at,completed_at,duration_seconds,runner_name,runner_group,runner_type,runner_os,runner_arch,runner_image,labels_json,html_url,raw_json,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
+		on conflict(id) do update set run_id=excluded.run_id, account=excluded.account, repo=excluded.repo, repo_owner=excluded.repo_owner, repo_owner_kind=excluded.repo_owner_kind, billing_owner=excluded.billing_owner, billing_owner_kind=excluded.billing_owner_kind, billing_plan=excluded.billing_plan, cost_class=excluded.cost_class, workflow_name=excluded.workflow_name, workflow_path=excluded.workflow_path, name=excluded.name, status=excluded.status, conclusion=excluded.conclusion, started_at=excluded.started_at, completed_at=excluded.completed_at, duration_seconds=excluded.duration_seconds, runner_name=excluded.runner_name, runner_group=excluded.runner_group, runner_type=excluded.runner_type, runner_os=excluded.runner_os, runner_arch=excluded.runner_arch, runner_image=excluded.runner_image, labels_json=excluded.labels_json, html_url=excluded.html_url, raw_json=excluded.raw_json, updated_at=current_timestamp`,
+		job.ID, job.RunID, job.Account, job.Repo, job.RepoOwner, job.RepoOwnerKind, job.BillingOwner, job.BillingOwnerKind, job.BillingPlan, job.CostClass, job.WorkflowName, job.WorkflowPath, job.Name, job.Status, job.Conclusion, job.StartedAt, job.CompletedAt, job.DurationSecs, job.RunnerName, job.RunnerGroup, job.Runner.Type, job.Runner.OS, job.Runner.Arch, job.Runner.Image, string(labels), job.HTMLURL, string(firstRaw(job.Raw, raw)))
 	return err
 }
 
 func (c *Cache) ListRuns(filters QueryFilters) ([]RunRecord, error) {
-	query := `select id,repo,workflow_id,workflow_name,workflow_path,run_number,run_attempt,event,branch,actor,status,conclusion,created_at,run_started_at,html_url,raw_json from runs`
+	query := `select id,coalesce(account,''),repo,coalesce(repo_owner,''),coalesce(repo_owner_kind,''),coalesce(billing_owner,''),coalesce(billing_owner_kind,''),coalesce(billing_plan,''),workflow_id,workflow_name,workflow_path,run_number,run_attempt,event,branch,actor,status,conclusion,created_at,run_started_at,html_url,coalesce(raw_json,'') from runs`
 	where, args := filtersWhere(filters, "run_started_at")
 	if where != "" {
 		query += " where " + where
@@ -1430,7 +2305,7 @@ func (c *Cache) ListRuns(filters QueryFilters) ([]RunRecord, error) {
 	for rows.Next() {
 		var run RunRecord
 		var raw string
-		if err := rows.Scan(&run.ID, &run.Repo, &run.WorkflowID, &run.WorkflowName, &run.WorkflowPath, &run.RunNumber, &run.RunAttempt, &run.Event, &run.Branch, &run.Actor, &run.Status, &run.Conclusion, &run.CreatedAt, &run.RunStartedAt, &run.HTMLURL, &raw); err != nil {
+		if err := rows.Scan(&run.ID, &run.Account, &run.Repo, &run.RepoOwner, &run.RepoOwnerKind, &run.BillingOwner, &run.BillingOwnerKind, &run.BillingPlan, &run.WorkflowID, &run.WorkflowName, &run.WorkflowPath, &run.RunNumber, &run.RunAttempt, &run.Event, &run.Branch, &run.Actor, &run.Status, &run.Conclusion, &run.CreatedAt, &run.RunStartedAt, &run.HTMLURL, &raw); err != nil {
 			return nil, err
 		}
 		run.Raw = json.RawMessage(raw)
@@ -1440,7 +2315,7 @@ func (c *Cache) ListRuns(filters QueryFilters) ([]RunRecord, error) {
 }
 
 func (c *Cache) ListRepos() ([]Repo, error) {
-	rows, err := c.db.Query(`select id,owner,name,full_name,private,raw_json from repos order by full_name`)
+	rows, err := c.db.Query(`select id,coalesce(account,''),owner,coalesce(owner_kind,''),name,full_name,private,coalesce(billing_owner,''),coalesce(billing_owner_kind,''),coalesce(billing_plan,''),coalesce(raw_json,'') from repos order by full_name`)
 	if err != nil {
 		return nil, err
 	}
@@ -1450,7 +2325,7 @@ func (c *Cache) ListRepos() ([]Repo, error) {
 		var repo Repo
 		var private int
 		var raw string
-		if err := rows.Scan(&repo.ID, &repo.Owner, &repo.Name, &repo.FullName, &private, &raw); err != nil {
+		if err := rows.Scan(&repo.ID, &repo.Account, &repo.Owner, &repo.OwnerKind, &repo.Name, &repo.FullName, &private, &repo.BillingOwner, &repo.BillingOwnerKind, &repo.BillingPlan, &raw); err != nil {
 			return nil, err
 		}
 		repo.Private = private == 1
@@ -1461,7 +2336,7 @@ func (c *Cache) ListRepos() ([]Repo, error) {
 }
 
 func (c *Cache) ListJobs(filters QueryFilters) ([]JobRecord, error) {
-	query := `select id,run_id,repo,workflow_name,workflow_path,name,status,conclusion,started_at,completed_at,duration_seconds,runner_name,runner_group,runner_type,runner_os,runner_arch,runner_image,labels_json,html_url,raw_json from jobs`
+	query := `select id,run_id,coalesce(account,''),repo,coalesce(repo_owner,''),coalesce(repo_owner_kind,''),coalesce(billing_owner,''),coalesce(billing_owner_kind,''),coalesce(billing_plan,''),coalesce(cost_class,''),workflow_name,workflow_path,name,status,conclusion,started_at,completed_at,duration_seconds,runner_name,runner_group,runner_type,runner_os,runner_arch,runner_image,coalesce(labels_json,'[]'),html_url,coalesce(raw_json,'') from jobs`
 	where, args := filtersWhere(filters, "started_at")
 	if where != "" {
 		query += " where " + where
@@ -1480,7 +2355,7 @@ func (c *Cache) ListJobs(filters QueryFilters) ([]JobRecord, error) {
 		var job JobRecord
 		var labels string
 		var raw string
-		if err := rows.Scan(&job.ID, &job.RunID, &job.Repo, &job.WorkflowName, &job.WorkflowPath, &job.Name, &job.Status, &job.Conclusion, &job.StartedAt, &job.CompletedAt, &job.DurationSecs, &job.RunnerName, &job.RunnerGroup, &job.Runner.Type, &job.Runner.OS, &job.Runner.Arch, &job.Runner.Image, &labels, &job.HTMLURL, &raw); err != nil {
+		if err := rows.Scan(&job.ID, &job.RunID, &job.Account, &job.Repo, &job.RepoOwner, &job.RepoOwnerKind, &job.BillingOwner, &job.BillingOwnerKind, &job.BillingPlan, &job.CostClass, &job.WorkflowName, &job.WorkflowPath, &job.Name, &job.Status, &job.Conclusion, &job.StartedAt, &job.CompletedAt, &job.DurationSecs, &job.RunnerName, &job.RunnerGroup, &job.Runner.Type, &job.Runner.OS, &job.Runner.Arch, &job.Runner.Image, &labels, &job.HTMLURL, &raw); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(labels), &job.Labels)
@@ -1488,6 +2363,43 @@ func (c *Cache) ListJobs(filters QueryFilters) ([]JobRecord, error) {
 		jobs = append(jobs, job)
 	}
 	return jobs, rows.Err()
+}
+
+func (c *Cache) UpsertBillingUsage(record BillingUsageRecord) error {
+	raw, _ := json.Marshal(record)
+	_, err := c.db.Exec(`insert into billing_usage(key,account,account_kind,date,year,month,day,product,sku,unit_type,model,organization_name,repository_name,cost_center_id,cost_class,quantity,gross_quantity,discount_quantity,net_quantity,price_per_unit,gross_amount,discount_amount,net_amount,raw_json,updated_at)
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
+		on conflict(key) do update set account=excluded.account, account_kind=excluded.account_kind, date=excluded.date, year=excluded.year, month=excluded.month, day=excluded.day, product=excluded.product, sku=excluded.sku, unit_type=excluded.unit_type, model=excluded.model, organization_name=excluded.organization_name, repository_name=excluded.repository_name, cost_center_id=excluded.cost_center_id, cost_class=excluded.cost_class, quantity=excluded.quantity, gross_quantity=excluded.gross_quantity, discount_quantity=excluded.discount_quantity, net_quantity=excluded.net_quantity, price_per_unit=excluded.price_per_unit, gross_amount=excluded.gross_amount, discount_amount=excluded.discount_amount, net_amount=excluded.net_amount, raw_json=excluded.raw_json, updated_at=current_timestamp`,
+		record.Key, record.Account, record.AccountKind, record.Date, record.Year, record.Month, record.Day, record.Product, record.SKU, record.UnitType, record.Model, record.OrganizationName, record.RepositoryName, record.CostCenterID, record.CostClass, record.Quantity, record.GrossQuantity, record.DiscountQuantity, record.NetQuantity, record.PricePerUnit, record.GrossAmount, record.DiscountAmount, record.NetAmount, string(firstRaw(record.Raw, raw)))
+	return err
+}
+
+func (c *Cache) ListBillingUsage(filters BillingQueryFilters) ([]BillingUsageRecord, error) {
+	query := `select key,account,account_kind,coalesce(date,''),coalesce(year,0),coalesce(month,0),coalesce(day,0),coalesce(product,''),coalesce(sku,''),coalesce(unit_type,''),coalesce(model,''),coalesce(organization_name,''),coalesce(repository_name,''),coalesce(cost_center_id,''),coalesce(cost_class,''),coalesce(quantity,0),coalesce(gross_quantity,0),coalesce(discount_quantity,0),coalesce(net_quantity,0),coalesce(price_per_unit,0),coalesce(gross_amount,0),coalesce(discount_amount,0),coalesce(net_amount,0),coalesce(raw_json,'') from billing_usage`
+	where, args := billingFiltersWhere(filters)
+	if where != "" {
+		query += " where " + where
+	}
+	query += " order by net_amount desc, date desc"
+	if filters.Limit > 0 {
+		query += fmt.Sprintf(" limit %d", filters.Limit)
+	}
+	rows, err := c.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []BillingUsageRecord
+	for rows.Next() {
+		var record BillingUsageRecord
+		var raw string
+		if err := rows.Scan(&record.Key, &record.Account, &record.AccountKind, &record.Date, &record.Year, &record.Month, &record.Day, &record.Product, &record.SKU, &record.UnitType, &record.Model, &record.OrganizationName, &record.RepositoryName, &record.CostCenterID, &record.CostClass, &record.Quantity, &record.GrossQuantity, &record.DiscountQuantity, &record.NetQuantity, &record.PricePerUnit, &record.GrossAmount, &record.DiscountAmount, &record.NetAmount, &raw); err != nil {
+			return nil, err
+		}
+		record.Raw = json.RawMessage(raw)
+		records = append(records, record)
+	}
+	return records, rows.Err()
 }
 
 func filtersWhere(filters QueryFilters, timeField string) (string, []any) {
@@ -1508,8 +2420,58 @@ func filtersWhere(filters QueryFilters, timeField string) (string, []any) {
 	return strings.Join(parts, " and "), args
 }
 
+func billingFiltersWhere(filters BillingQueryFilters) (string, []any) {
+	var parts []string
+	var args []any
+	if filters.Account != "" {
+		parts = append(parts, "account = ?")
+		args = append(args, filters.Account)
+	}
+	if filters.Repo != "" {
+		parts = append(parts, "repository_name = ?")
+		args = append(args, filters.Repo)
+	}
+	if filters.Since != "" {
+		parts = append(parts, "date >= ?")
+		args = append(args, filters.Since)
+	}
+	if filters.Until != "" {
+		parts = append(parts, "date <= ?")
+		args = append(args, filters.Until)
+	}
+	if filters.Year != 0 {
+		parts = append(parts, "year = ?")
+		args = append(args, filters.Year)
+	}
+	if filters.Month != 0 {
+		parts = append(parts, "month = ?")
+		args = append(args, filters.Month)
+	}
+	if filters.Day != 0 {
+		parts = append(parts, "day = ?")
+		args = append(args, filters.Day)
+	}
+	if filters.Product != "" {
+		parts = append(parts, "product = ?")
+		args = append(args, filters.Product)
+	}
+	if filters.SKU != "" {
+		parts = append(parts, "sku = ?")
+		args = append(args, filters.SKU)
+	}
+	if filters.Organization != "" {
+		parts = append(parts, "organization_name = ?")
+		args = append(args, filters.Organization)
+	}
+	if filters.CostCenterID != "" {
+		parts = append(parts, "cost_center_id = ?")
+		args = append(args, filters.CostCenterID)
+	}
+	return strings.Join(parts, " and "), args
+}
+
 func (c *Cache) Stats() (map[string]int, error) {
-	tables := []string{"repos", "runs", "jobs"}
+	tables := []string{"repos", "runs", "jobs", "billing_usage"}
 	stats := map[string]int{}
 	for _, table := range tables {
 		row := c.db.QueryRow("select count(*) from " + table)
@@ -1523,7 +2485,7 @@ func (c *Cache) Stats() (map[string]int, error) {
 }
 
 func (c *Cache) Clear() error {
-	for _, table := range []string{"jobs", "runs", "repos"} {
+	for _, table := range []string{"billing_usage", "jobs", "runs", "repos"} {
 		if _, err := c.db.Exec("delete from " + table); err != nil {
 			return err
 		}

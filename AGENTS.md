@@ -38,6 +38,9 @@ uvx showboat verify docs/showboat-demo.md
 - Cached inspection commands (`summary`, `runs list`, `jobs list`, `serve`
   without `--refresh`) must not hit GitHub.
 - Manual ingestion is only an escape hatch under `doctor ingest actions`.
+- Actions reports carry account and billing-owner attribution, but GitHub
+  billing usage rows are the invoice source of truth. Keep the two data sources
+  separate in commands, storage, docs, and tests.
 
 ## Storage
 

@@ -40,6 +40,19 @@ gh actions-usage report \
   --since 2026-04-01
 ```
 
+For a personal plus organization view, pass multiple accounts and group by the
+attribution fields:
+
+```bash
+gh actions-usage report \
+  --account @me,ORG \
+  --since 2026-04-01 \
+  --account-plan YOUR_LOGIN=pro,ORG=enterprise \
+  --billing-owner ORG=ENTERPRISE_SLUG \
+  --billing-kind ORG=enterprise \
+  --group-by account,billing-owner,billing-owner-kind,billing-plan,repo,runner-image
+```
+
 Run it again to prove idempotence:
 
 ```bash
@@ -78,6 +91,19 @@ gh actions-usage summary \
   --repo OWNER/REPO \
   --group-by repo,workflow-path,job,runner-image \
   --json
+```
+
+Billing usage comes from GitHub's billing API and is cached separately from job
+telemetry:
+
+```bash
+gh actions-usage billing refresh \
+  --account @me,ORG,enterprise:ENTERPRISE_SLUG \
+  --year 2026 \
+  --month 4
+
+gh actions-usage billing summary \
+  --group-by account,product,sku,cost-class
 ```
 
 ## 5. Open the Dashboard
