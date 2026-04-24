@@ -226,6 +226,7 @@ Raw writes are intentionally not implemented.
 make test
 make build
 make install-local
+make docs-check
 ```
 
 Useful local smoke test:
@@ -237,3 +238,31 @@ GH_ACTIONS_USAGE_CACHE="$(mktemp -t gh-actions-usage).db" \
 
 See [docs/demo.md](docs/demo.md) for a walkthrough.
 See [docs/showboat-demo.md](docs/showboat-demo.md) for a captured Showboat/Rodney demo with command output and a dashboard screenshot.
+
+## Demo Docs
+
+The Showboat transcript is executable documentation. It also drives Rodney to
+open the dashboard and capture `docs/assets/dashboard.png`.
+
+```bash
+make docs-check
+make docs-update
+```
+
+`docs-check` fails if command output, browser assertions, or screenshot capture
+break. `docs-update` rewrites the generated transcript, then verifies it again.
+
+## Release
+
+Releases are tag-driven. The GitHub Actions workflow at
+`.github/workflows/release.yml` uses `cli/gh-extension-precompile` to publish
+precompiled gh extension artifacts.
+
+```bash
+make release VERSION=v0.1.0
+make release-status VERSION=v0.1.0
+```
+
+`make release` runs the full local check, requires a clean worktree, verifies
+GitHub CLI auth, creates an annotated tag, and pushes it. The pushed tag starts
+the release workflow.

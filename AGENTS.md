@@ -31,6 +31,10 @@ repo convention changes.
 uvx showboat verify docs/showboat-demo.md
 ```
 
+- Prefer `make docs-check` and `make docs-update` for Showboat/Rodney docs so
+  the transcript and dashboard screenshot are handled the same way locally and
+  in review.
+
 ## CLI UX
 
 - `report` is the primary refresh-plus-summary command.
@@ -47,3 +51,9 @@ uvx showboat verify docs/showboat-demo.md
 - The current storage code uses `database/sql` directly against SQLite.
 - `sqlc` is a good future fit if the schema grows or query churn increases. See
   `docs/sqlc-evaluation.md` before introducing generated database code.
+
+## Release
+
+- Releases are created by `make release VERSION=vX.Y.Z`, which runs checks,
+  creates an annotated tag, and pushes it to trigger `.github/workflows/release.yml`.
+- Use `make release-status VERSION=vX.Y.Z` to inspect the workflow and release.
