@@ -5,25 +5,24 @@ Status: defer adoption for now.
 ## Context
 
 The cache layer currently has one schema initializer, three upserts, three list
-queries, stats, and clear. Tests cover idempotent writes, imports, exports,
-summary reads, the HTTP handler, and the fixture-backed e2e path.
+queries, stats, and clear. Tests cover idempotent writes, fixture import/export,
+summary reads, and the HTTP handler.
 
-`sqlc` is still a good candidate. The original sqlc post describes the core
-value clearly: write SQL once, generate type-safe Go, and catch query/schema
-drift at generation time. Current sqlc docs also support SQLite generation with
-`engine: "sqlite"`.
+`sqlc` is still a good fit for this repo later. It lets us write SQL once,
+generate type-safe Go, and catch query/schema drift at generation time. Current
+sqlc docs also support SQLite generation with `engine: "sqlite"`.
 
 ## Decision
 
 Do not introduce sqlc in this patch. The storage layer is small, and the two
 highest-value read paths build optional filters dynamically. A sqlc migration
-would add generated code plus adapters while leaving some query composition in
+would add generated code and adapters while some query composition would stay in
 handwritten Go.
 
-This is worth revisiting when one of these becomes true:
+Revisit this when one of these becomes true:
 
 - We add migrations or versioned schema changes.
-- We add more aggregate queries for billing and runner analysis.
+- We add more aggregate queries for billing or runner analysis.
 - Query shape churn starts causing scan/order bugs.
 - Multiple contributors are editing the cache layer at the same time.
 

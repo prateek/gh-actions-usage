@@ -49,8 +49,8 @@ uvx showboat verify docs/showboat-demo.md
 ## Storage
 
 - The current storage code uses `database/sql` directly against SQLite.
-- `sqlc` is a good future fit if the schema grows or query churn increases. See
-  `docs/sqlc-evaluation.md` before introducing generated database code.
+- Consider `sqlc` if the schema grows or query churn increases. See
+  `docs/sqlc-evaluation.md` before adding generated database code.
 
 ## Release
 

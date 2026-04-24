@@ -1,10 +1,10 @@
 # Demo Walkthrough
 
-This demo is designed to be repeatable. `report` and `serve --refresh` update
-the cache before reading it; rows are upserted by GitHub IDs.
+This demo is repeatable. `report` and `serve --refresh` update the cache before
+reading it. Rows are upserted by GitHub IDs.
 
-For an executable transcript with captured command output and a browser
-screenshot, see [showboat-demo.md](showboat-demo.md).
+For captured command output and a browser screenshot, see
+[showboat-demo.md](showboat-demo.md).
 
 ## 1. Check Setup
 
@@ -40,8 +40,7 @@ gh actions-usage report \
   --since 2026-04-01
 ```
 
-For a personal plus organization view, pass multiple accounts and group by the
-attribution fields:
+For a personal plus org view, pass multiple accounts and group by attribution:
 
 ```bash
 gh actions-usage report \
@@ -53,7 +52,7 @@ gh actions-usage report \
   --group-by account,billing-owner,billing-owner-kind,billing-plan,repo,runner-image
 ```
 
-Run it again to prove idempotence:
+Run it again. The row counts should stay the same:
 
 ```bash
 gh actions-usage report \
@@ -117,13 +116,13 @@ gh actions-usage serve \
   --open
 ```
 
-Demo path through the UI:
+Dashboard checklist:
 
 1. Start with the runtime metric and failure rate.
-2. Use the flamegraph to identify the largest repo/workflow/job/runner blocks.
+2. Use the flamegraph to find the largest repo/workflow/job/runner blocks.
 3. Use the histogram to find long-tail jobs.
 4. Filter by `macOS`, `ubuntu`, or a job name.
-5. Use the slowest-job table to jump from aggregate cost to exact jobs.
+5. Use the slowest-job table to open exact job rows.
 
 Keyboard shortcuts:
 
@@ -136,8 +135,8 @@ Keyboard shortcuts:
 gh actions-usage export --out actions-usage-report.json
 ```
 
-The export includes cached repositories, runs, and jobs. It does not refetch
-data.
+The export includes cached repositories, runs, and jobs. It does not call
+GitHub.
 
 Import the same data into a fresh cache:
 
@@ -147,7 +146,7 @@ GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
 ```
 
 The checked-in fixture at `testdata/demo-export.json` is safe for demos and e2e
-tests because it never calls GitHub.
+tests. It never calls GitHub.
 
 ## 7. Manual Refresh Escape Hatch
 

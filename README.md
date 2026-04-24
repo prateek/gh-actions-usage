@@ -1,11 +1,10 @@
 # gh-actions-usage
 
-A GitHub CLI extension for cached GitHub Actions and billing usage analysis.
+A GitHub CLI extension for GitHub Actions and billing usage analysis.
 
-It loads workflow runs, jobs, and billing usage into a local SQLite cache, then
-lets you query that cache repeatedly without burning GitHub API rate limit. The
-embedded web UI includes an agentsview-style dashboard with a flamegraph,
-duration histogram, filters, and slowest-job table.
+It stores Actions job data and billing usage in a local SQLite cache. Refresh
+once, then slice the cached data without repeated API calls. The web UI has a
+flamegraph, duration histogram, filters, and slowest-job table.
 
 ## Install
 
@@ -44,7 +43,7 @@ gh actions-usage accounts list
 gh actions-usage repos list --account @me
 ```
 
-Generate a fresh report for one repo:
+Refresh one repo and print a report:
 
 ```bash
 gh actions-usage report \
@@ -53,7 +52,7 @@ gh actions-usage report \
   --since 2026-04-01
 ```
 
-Generate an account-attributed report across personal and org accounts:
+Refresh personal and org accounts with billing attribution:
 
 ```bash
 gh actions-usage report \
@@ -65,14 +64,14 @@ gh actions-usage report \
   --group-by account,billing-owner,billing-owner-kind,billing-plan,repo,runner-image
 ```
 
-Refresh billing usage and summarize paid versus discounted rows:
+Refresh billing usage, then group by paid and discounted rows:
 
 ```bash
 gh actions-usage billing refresh --account @me,my-org,enterprise:my-enterprise --year 2026 --month 4
 gh actions-usage billing summary --group-by account,product,sku,cost-class
 ```
 
-Slice cached jobs without hitting GitHub:
+Slice cached jobs locally:
 
 ```bash
 gh actions-usage summary \
@@ -90,7 +89,7 @@ gh actions-usage serve \
   --open
 ```
 
-From a checkout, try the offline fixture without touching GitHub:
+From a checkout, run the offline fixture:
 
 ```bash
 GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
@@ -136,11 +135,11 @@ export GH_ACTIONS_USAGE_CACHE=/tmp/actions-usage.db
 Relative `XDG_CACHE_HOME` values are ignored. The XDG spec requires absolute
 base-directory paths.
 
-Repeated refreshes are idempotent. Repositories, runs, and jobs are upserted
-by stable GitHub IDs. Raw GitHub JSON is retained in the cache alongside parsed
-fields so future versions can add new views without refetching old data.
-Billing usage rows are upserted by a deterministic account/product/repo/date
-key because GitHub billing usage items do not expose stable item IDs.
+Repeated refreshes are idempotent. Actions rows are upserted by stable GitHub
+IDs. The cache keeps raw GitHub JSON next to parsed fields, so new views can
+read old data without another fetch. Billing usage rows use a deterministic
+account/product/repo/date key because GitHub billing usage items do not expose
+stable item IDs.
 
 `report` and `serve --refresh` update the cache before reading it. `summary`,
 `runs list`, `jobs list`, and `serve` without `--refresh` read only cached data.
@@ -153,12 +152,12 @@ gh actions-usage doctor ingest actions \
   --since YYYY-MM-DD
 ```
 
-Billing refreshes call GitHub's billing usage endpoints for the account level
-you request: user, organization, or enterprise. Those endpoints return usage
+Billing refreshes call GitHub's billing usage endpoint for the account level you
+request. Use `@me`, an organization, or `enterprise:SLUG`. GitHub returns usage
 billed to that account, so account choice matters when Copilot or Actions usage
 is billed through an org or enterprise. See GitHub's
-[billing usage API docs](https://docs.github.com/en/rest/billing/usage) for the
-current permissions and endpoint availability.
+[billing usage API docs](https://docs.github.com/en/rest/billing/usage) for
+permissions and endpoint availability.
 
 Useful Actions group dimensions:
 
@@ -195,7 +194,7 @@ gh actions-usage cache stats
 ## Web UI
 
 `gh actions-usage serve` reads from the local cache. Add `--refresh` to update
-the scoped repo/date range before the dashboard starts. It exposes:
+the scoped repo/date range before the dashboard starts. Routes:
 
 - `/` for the embedded dashboard.
 - `/api/summary` for grouped summary JSON.
@@ -211,14 +210,15 @@ The UI provides:
 
 ## Raw API Escape Hatch
 
-Read-only raw API calls use the same auth path as the extension:
+The raw API escape hatch supports read-only calls through the extension's auth
+path:
 
 ```bash
 gh actions-usage api get /user
 gh actions-usage api get /repos/prateek/movies-do-app/actions/runs
 ```
 
-Raw writes are intentionally not implemented.
+It does not support raw writes.
 
 ## Development
 
@@ -229,40 +229,40 @@ make install-local
 make docs-check
 ```
 
-Useful local smoke test:
+Local smoke test:
 
 ```bash
 GH_ACTIONS_USAGE_CACHE="$(mktemp -t gh-actions-usage).db" \
   go run . doctor --json
 ```
 
-See [docs/demo.md](docs/demo.md) for a walkthrough.
-See [docs/showboat-demo.md](docs/showboat-demo.md) for a captured Showboat/Rodney demo with command output and a dashboard screenshot.
+See [docs/demo.md](docs/demo.md) for a command walkthrough.
+See [docs/showboat-demo.md](docs/showboat-demo.md) for the Showboat/Rodney transcript.
 
 ## Demo Docs
 
-The Showboat transcript is executable documentation. It also drives Rodney to
-open the dashboard and capture `docs/assets/dashboard.png`.
+The Showboat transcript reruns the CLI examples. It also uses Rodney to open the
+dashboard and capture `docs/assets/dashboard.png`.
 
 ```bash
 make docs-check
 make docs-update
 ```
 
-`docs-check` fails if command output, browser assertions, or screenshot capture
-break. `docs-update` rewrites the generated transcript, then verifies it again.
+`docs-check` reruns the transcript and fails on command output, browser
+assertions, or screenshot capture. `docs-update` rewrites the transcript, then
+verifies it again.
 
 ## Release
 
-Releases are tag-driven. The GitHub Actions workflow at
-`.github/workflows/release.yml` uses `cli/gh-extension-precompile` to publish
-precompiled gh extension artifacts.
+Releases start from tags. `.github/workflows/release.yml` uses
+`cli/gh-extension-precompile` to publish gh extension artifacts.
 
 ```bash
 make release VERSION=v0.1.0
 make release-status VERSION=v0.1.0
 ```
 
-`make release` runs the full local check, requires a clean worktree, verifies
-GitHub CLI auth, creates an annotated tag, and pushes it. The pushed tag starts
-the release workflow.
+`make release` runs the local checks, requires a clean worktree, verifies GitHub
+CLI auth, creates an annotated tag, and pushes it. The tag starts the release
+workflow.

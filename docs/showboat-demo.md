@@ -3,7 +3,9 @@
 *2026-04-24T22:27:57Z by Showboat 0.6.1*
 <!-- showboat-id: 2a1c0fea-a6af-46a9-98a2-2b2e33a47da6 -->
 
-This demo exercises the CLI without calling GitHub. It imports a checked-in export fixture, proves repeated imports are idempotent at the SQLite layer, slices runtime by runner image, and opens the embedded dashboard with Rodney.
+This demo runs the CLI without calling GitHub. It imports a checked-in export
+fixture twice, checks the SQLite row counts, slices runtime by runner image, and
+opens the dashboard with Rodney.
 
 ```bash
 set -euo pipefail
@@ -35,7 +37,8 @@ cache=/tmp/gh-actions-usage-showboat-import.db
 }
 ```
 
-The two import commands read the same seven jobs. The cache count stays at one row per GitHub ID, so the data loader can be rerun safely.
+Both import commands read the same seven jobs. The cache keeps one row per
+GitHub ID, so the loader can run more than once.
 
 ```bash
 set -euo pipefail
@@ -55,7 +58,8 @@ date        repo             workflow-path               runner-os  runner-image
 2026-04-24  demo/mobile-app  .github/workflows/ci.yml    Linux      ubuntu-latest  3     7.5      2m30s   3m20s
 ```
 
-The fixture makes the expensive case obvious: two macOS jobs consume most of the runtime, while the Linux jobs are cheaper and shorter.
+In this fixture, two macOS jobs use most of the runtime. The Linux jobs are
+shorter.
 
 ```bash
 set -euo pipefail
@@ -73,7 +77,9 @@ started     repo             workflow                    job         runner     
 2026-04-24  demo/mobile-app  .github/workflows/ci.yml    unit tests  ubuntu-latest  success  3m20s
 ```
 
-The dashboard reads the same cache through /api/summary and /api/jobs. Rodney opens the page, asserts that cached rows rendered, and captures the screenshot below.
+The dashboard reads the same cache through `/api/summary` and `/api/jobs`.
+Rodney opens the page, checks that cached rows rendered, and captures the
+screenshot.
 
 ```bash
 set -euo pipefail
