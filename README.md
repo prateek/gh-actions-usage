@@ -2,7 +2,7 @@
 
 A GitHub CLI extension for cached GitHub Actions usage analysis.
 
-It ingests workflow runs and jobs into a local SQLite cache, then lets you query
+It loads workflow runs and jobs into a local SQLite cache, then lets you query
 that cache repeatedly without burning GitHub API rate limit. The embedded web UI
 includes an agentsview-style dashboard with a flamegraph, duration histogram,
 filters, and slowest-job table.
@@ -44,26 +44,31 @@ gh actions-usage accounts list
 gh actions-usage repos list --account @me
 ```
 
-Ingest one repo into the local cache:
+Generate a fresh report for one repo:
 
 ```bash
-gh actions-usage ingest actions \
+gh actions-usage report \
   --account @me \
   --repo prateek/movies-do-app \
   --since 2026-04-01
 ```
 
-Summarize cached jobs without hitting GitHub:
+Slice cached jobs without hitting GitHub:
 
 ```bash
 gh actions-usage summary \
   --group-by date,repo,workflow-path,job,runner-image
 ```
 
-Open the local dashboard:
+Refresh and open the local dashboard:
 
 ```bash
-gh actions-usage serve --open
+gh actions-usage serve \
+  --refresh \
+  --account @me \
+  --repo prateek/movies-do-app \
+  --since 2026-04-01 \
+  --open
 ```
 
 From a checkout, try the offline fixture without touching GitHub:
@@ -82,13 +87,13 @@ GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
 gh actions-usage doctor [--json]
 gh actions-usage accounts list [--json]
 gh actions-usage repos list --account @me|ORG [--json]
-gh actions-usage ingest actions --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+gh actions-usage report --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
 gh actions-usage summary [--group-by repo,workflow-path,job,runner-image] [--json]
 gh actions-usage runs list [--repo OWNER/NAME] [--limit 50] [--json]
 gh actions-usage jobs list [--repo OWNER/NAME] [--limit 50] [--json]
 gh actions-usage export --out report.json
 gh actions-usage import --in report.json [--json]
-gh actions-usage serve [--listen 127.0.0.1:8080] [--open]
+gh actions-usage serve [--refresh] [--account @me|ORG] [--repo OWNER/NAME] [--since YYYY-MM-DD] [--listen 127.0.0.1:8080] [--open]
 gh actions-usage api get /user
 gh actions-usage cache path|stats|clear
 ```
@@ -98,7 +103,7 @@ gh actions-usage cache path|stats|clear
 The cache is SQLite and defaults to:
 
 ```text
-~/Library/Caches/gh-actions-usage/cache.db
+${XDG_CACHE_HOME:-$HOME/.cache}/gh-actions-usage/cache.db
 ```
 
 Override it with:
@@ -107,9 +112,23 @@ Override it with:
 export GH_ACTIONS_USAGE_CACHE=/tmp/actions-usage.db
 ```
 
-Repeated ingest runs are idempotent. Repositories, runs, and jobs are upserted
+Relative `XDG_CACHE_HOME` values are ignored. The XDG spec requires absolute
+base-directory paths.
+
+Repeated refreshes are idempotent. Repositories, runs, and jobs are upserted
 by stable GitHub IDs. Raw GitHub JSON is retained in the cache alongside parsed
 fields so future versions can add new views without refetching old data.
+
+`report` and `serve --refresh` update the cache before reading it. `summary`,
+`runs list`, `jobs list`, and `serve` without `--refresh` read only cached data.
+For manual refresh debugging, use:
+
+```bash
+gh actions-usage doctor ingest actions \
+  --account @me \
+  --repo OWNER/REPO \
+  --since YYYY-MM-DD
+```
 
 ## JSON Policy
 
@@ -120,6 +139,7 @@ Examples:
 
 ```bash
 gh actions-usage jobs list --repo prateek/movies-do-app --limit 20 --json
+gh actions-usage report --account @me --repo prateek/movies-do-app --since 2026-04-01 --json
 gh actions-usage summary --group-by repo,runner-os,runner-image --json
 gh actions-usage import --in actions-usage-report.json --json
 gh actions-usage cache stats
@@ -127,7 +147,8 @@ gh actions-usage cache stats
 
 ## Web UI
 
-`gh actions-usage serve` reads only from the local cache. It exposes:
+`gh actions-usage serve` reads from the local cache. Add `--refresh` to update
+the scoped repo/date range before the dashboard starts. It exposes:
 
 - `/` for the embedded dashboard.
 - `/api/summary` for grouped summary JSON.

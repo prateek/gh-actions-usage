@@ -6,11 +6,11 @@ test: test-unit test-integration test-e2e
 
 .PHONY: test-unit
 test-unit:
-	go test ./... -run '^Test(CreatedQuery|RepoUnmarshalCapturesOwnerAndRaw|RunnerMetadata|SummaryGroupsByWorkflowAndRunner)$$'
+	go test ./... -run '^Test(CreatedQuery|DefaultCachePath.*|RepoUnmarshalCapturesOwnerAndRaw|RunnerMetadata|SummaryGroupsByWorkflowAndRunner)$$'
 
 .PHONY: test-integration
 test-integration:
-	go test ./... -run '^Test(CacheUpsertsAreIdempotent|RunSummaryCommandReadsCache|ImportCommandIsIdempotent|ExportCommandIncludesRepos|WebHandlerServesDashboardAndData)$$'
+	go test ./... -run '^Test(CacheUpsertsAreIdempotent|OpenCacheCreatesParentDirectoryPrivate|RunSummaryCommandReadsCache|ReportCommand.*|TopLevelIngestCommandIsNotPublic|DoctorIngestActionsRunsManualRefresh|ServeRefreshRequiresAPIClient|ImportCommandIsIdempotent|ExportCommandIncludesRepos|WebHandler.*)$$'
 
 .PHONY: test-e2e
 test-e2e:

@@ -1,7 +1,7 @@
 # Demo Walkthrough
 
-This demo is designed to be repeatable. Ingest can be run multiple times against
-the same repository and date range; rows are upserted by GitHub IDs.
+This demo is designed to be repeatable. `report` and `serve --refresh` update
+the cache before reading it; rows are upserted by GitHub IDs.
 
 For an executable transcript with captured command output and a browser
 screenshot, see [showboat-demo.md](showboat-demo.md).
@@ -31,10 +31,10 @@ gh actions-usage repos list --account @me
 
 Pick a repo with recent Actions runs.
 
-## 3. Ingest
+## 3. Generate a Fresh Report
 
 ```bash
-gh actions-usage ingest actions \
+gh actions-usage report \
   --account @me \
   --repo OWNER/REPO \
   --since 2026-04-01
@@ -43,7 +43,7 @@ gh actions-usage ingest actions \
 Run it again to prove idempotence:
 
 ```bash
-gh actions-usage ingest actions \
+gh actions-usage report \
   --account @me \
   --repo OWNER/REPO \
   --since 2026-04-01
@@ -83,7 +83,12 @@ gh actions-usage summary \
 ## 5. Open the Dashboard
 
 ```bash
-gh actions-usage serve --open
+gh actions-usage serve \
+  --refresh \
+  --account @me \
+  --repo OWNER/REPO \
+  --since 2026-04-01 \
+  --open
 ```
 
 Demo path through the UI:
@@ -117,3 +122,14 @@ GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-demo.db \
 
 The checked-in fixture at `testdata/demo-export.json` is safe for demos and e2e
 tests because it never calls GitHub.
+
+## 7. Manual Refresh Escape Hatch
+
+For refresh debugging, use the doctor namespace:
+
+```bash
+gh actions-usage doctor ingest actions \
+  --account @me \
+  --repo OWNER/REPO \
+  --since 2026-04-01
+```

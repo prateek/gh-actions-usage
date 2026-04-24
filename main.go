@@ -179,6 +179,19 @@ type IngestResult struct {
 	CachePath     string `json:"cache_path"`
 }
 
+type IngestOptions struct {
+	Account    string
+	RepoFilter string
+	Since      string
+	Until      string
+	Days       int
+}
+
+type ReportResult struct {
+	Refresh IngestResult `json:"refresh"`
+	Summary Summary      `json:"summary"`
+}
+
 type ImportResult struct {
 	ReposImported int    `json:"repos_imported"`
 	RunsImported  int    `json:"runs_imported"`
@@ -262,8 +275,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.cmdAccounts(ctx, args[1:])
 	case "repos":
 		return a.cmdRepos(ctx, args[1:])
-	case "ingest":
-		return a.cmdIngest(ctx, args[1:])
+	case "report":
+		return a.cmdReport(ctx, args[1:])
 	case "runs":
 		return a.cmdRuns(args[1:])
 	case "jobs":
@@ -275,7 +288,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "import":
 		return a.cmdImport(args[1:])
 	case "serve":
-		return a.cmdServe(args[1:])
+		return a.cmdServe(ctx, args[1:])
 	case "api":
 		return a.cmdAPI(args[1:])
 	case "cache":
@@ -292,20 +305,23 @@ Usage:
   gh actions-usage doctor [--json]
   gh actions-usage accounts list [--json]
   gh actions-usage repos list --account @me|ORG [--json]
-  gh actions-usage ingest actions --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+  gh actions-usage report --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
   gh actions-usage summary [--group-by repo,workflow-path,job,runner-image] [--json]
   gh actions-usage runs list [--json]
   gh actions-usage jobs list [--limit 50] [--json]
   gh actions-usage import --in report.json [--json]
-  gh actions-usage serve [--listen 127.0.0.1:8080] [--open]
+  gh actions-usage serve [--refresh] [--account @me|ORG] [--repo OWNER/NAME] [--since YYYY-MM-DD] [--listen 127.0.0.1:8080] [--open]
   gh actions-usage export --out report.json
   gh actions-usage api get /user
   gh actions-usage cache path|stats|clear
 
-Data is cached locally in SQLite and repeated ingest runs upsert raw run/job data.`)
+Reports refresh cached Actions data before summarizing it. Cached reads use the local SQLite cache.`)
 }
 
 func (a *App) cmdDoctor(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "ingest" {
+		return a.cmdDoctorIngest(ctx, args[1:])
+	}
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
 	jsonOut := fs.Bool("json", false, "print JSON")
@@ -431,14 +447,14 @@ func (a *App) cmdRepos(ctx context.Context, args []string) error {
 	return w.Flush()
 }
 
-func (a *App) cmdIngest(ctx context.Context, args []string) error {
+func (a *App) cmdDoctorIngest(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] != "actions" {
-		return fmt.Errorf("usage: ingest actions --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD]")
+		return fmt.Errorf("usage: doctor ingest actions --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD]")
 	}
-	fs := flag.NewFlagSet("ingest actions", flag.ContinueOnError)
+	fs := flag.NewFlagSet("doctor ingest actions", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
 	account := fs.String("account", "@me", "account to inspect")
-	repoFilter := fs.String("repo", "", "comma-separated repositories to ingest")
+	repoFilter := fs.String("repo", "", "comma-separated repositories to refresh")
 	since := fs.String("since", "", "start date YYYY-MM-DD")
 	until := fs.String("until", "", "end date YYYY-MM-DD")
 	days := fs.Int("days", 30, "days back when --since is absent")
@@ -446,31 +462,83 @@ func (a *App) cmdIngest(ctx context.Context, args []string) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+	result, _, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days})
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return writeJSON(a.stdout, result)
+	}
+	fmt.Fprintf(a.stdout, "ingested %d repos, %d runs, %d jobs\n", result.ReposIngested, result.RunsUpserted, result.JobsUpserted)
+	fmt.Fprintf(a.stdout, "cache: %s\n", result.CachePath)
+	return nil
+}
+
+func (a *App) cmdReport(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("report", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+	account := fs.String("account", "@me", "account to inspect")
+	repoFilter := fs.String("repo", "", "comma-separated repositories to include")
+	since := fs.String("since", "", "start date YYYY-MM-DD")
+	until := fs.String("until", "", "end date YYYY-MM-DD")
+	days := fs.Int("days", 30, "days back when --since is absent")
+	groupBy := fs.String("group-by", "repo,workflow-path,job,runner-image", "comma-separated dimensions")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days})
+	if err != nil {
+		return err
+	}
+	filters := reportFilters(*repoFilter, *since, *until, *days, a.now())
+	jobs, err := a.cache.ListJobs(QueryFilters{Since: filters.Since, Until: filters.Until})
+	if err != nil {
+		return err
+	}
+	jobs = filterJobsByRepos(jobs, selected)
+	summary := buildSummary(a.cache.Path(), jobs, filters, splitCSV(*groupBy), a.now())
+	report := ReportResult{Refresh: result, Summary: summary}
+	if *jsonOut {
+		return writeJSON(a.stdout, report)
+	}
+	fmt.Fprintf(a.stderr, "refreshed %d repos, %d runs, %d jobs\n", result.ReposIngested, result.RunsUpserted, result.JobsUpserted)
+	printSummary(a.stdout, summary)
+	return nil
+}
+
+func (a *App) refreshActions(ctx context.Context, options IngestOptions) (IngestResult, []Repo, error) {
 	if a.client == nil {
-		return fmt.Errorf("GitHub API client unavailable; run `gh auth login`")
+		return IngestResult{}, nil, fmt.Errorf("GitHub API client unavailable; run `gh auth login`")
 	}
-	created, err := createdQuery(*since, *until, *days, a.now())
+	if options.Account == "" {
+		options.Account = "@me"
+	}
+	if options.Days == 0 {
+		options.Days = 30
+	}
+	created, err := createdQuery(options.Since, options.Until, options.Days, a.now())
 	if err != nil {
-		return err
+		return IngestResult{}, nil, err
 	}
 
-	repos, err := a.fetchRepos(ctx, *account)
+	repos, err := a.fetchRepos(ctx, options.Account)
 	if err != nil {
-		return err
+		return IngestResult{}, nil, err
 	}
-	selected := filterRepos(repos, *repoFilter)
+	selected := filterRepos(repos, options.RepoFilter)
 	if len(selected) == 0 {
-		return fmt.Errorf("no repositories matched")
+		return IngestResult{}, nil, fmt.Errorf("no repositories matched")
 	}
 
-	result := IngestResult{Account: *account, ReposSeen: len(repos), ReposIngested: len(selected), CachePath: a.cache.Path()}
+	result := IngestResult{Account: options.Account, ReposSeen: len(repos), ReposIngested: len(selected), CachePath: a.cache.Path()}
 	for _, repo := range selected {
 		if err := a.cache.UpsertRepo(repo); err != nil {
-			return err
+			return IngestResult{}, nil, err
 		}
 		runs, err := a.fetchRuns(ctx, repo, created)
 		if err != nil {
-			return err
+			return IngestResult{}, nil, err
 		}
 		workflowPaths := map[int64]string{}
 		for _, run := range runs {
@@ -479,29 +547,23 @@ func (a *App) cmdIngest(ctx context.Context, args []string) error {
 			}
 			run.WorkflowPath = workflowPaths[run.WorkflowID]
 			if err := a.cache.UpsertRun(run); err != nil {
-				return err
+				return IngestResult{}, nil, err
 			}
 			result.RunsUpserted++
 
 			jobs, err := a.fetchJobs(ctx, repo, run)
 			if err != nil {
-				return err
+				return IngestResult{}, nil, err
 			}
 			for _, job := range jobs {
 				if err := a.cache.UpsertJob(job); err != nil {
-					return err
+					return IngestResult{}, nil, err
 				}
 				result.JobsUpserted++
 			}
 		}
 	}
-
-	if *jsonOut {
-		return writeJSON(a.stdout, result)
-	}
-	fmt.Fprintf(a.stdout, "ingested %d repos, %d runs, %d jobs\n", result.ReposIngested, result.RunsUpserted, result.JobsUpserted)
-	fmt.Fprintf(a.stdout, "cache: %s\n", result.CachePath)
-	return nil
+	return result, selected, nil
 }
 
 func (a *App) cmdRuns(args []string) error {
@@ -664,26 +726,44 @@ func (a *App) cmdImport(args []string) error {
 	return nil
 }
 
-func (a *App) cmdServe(args []string) error {
+func (a *App) cmdServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
 	listen := fs.String("listen", "127.0.0.1:8080", "listen address")
 	openBrowser := fs.Bool("open", false, "open browser")
+	refresh := fs.Bool("refresh", false, "refresh Actions data before serving")
+	account := fs.String("account", "@me", "account to inspect when refreshing")
+	repoFilter := fs.String("repo", "", "comma-separated repositories to refresh")
+	since := fs.String("since", "", "start date YYYY-MM-DD")
+	until := fs.String("until", "", "end date YYYY-MM-DD")
+	days := fs.Int("days", 30, "days back when --since is absent")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	handler, err := a.webHandler()
+	if *refresh {
+		result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(a.stderr, "refreshed %d repos, %d runs, %d jobs\n", result.ReposIngested, result.RunsUpserted, result.JobsUpserted)
+		return a.serveWithScope(WebScope{Filters: reportFilters(*repoFilter, *since, *until, *days, a.now()), Repos: selected}, *listen, *openBrowser)
+	}
+	return a.serveWithScope(WebScope{}, *listen, *openBrowser)
+}
+
+func (a *App) serveWithScope(scope WebScope, listen string, openBrowser bool) error {
+	handler, err := a.webHandlerWithScope(scope)
 	if err != nil {
 		return err
 	}
-	ln, err := net.Listen("tcp", *listen)
+	ln, err := net.Listen("tcp", listen)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
 	addr := "http://" + ln.Addr().String()
 	fmt.Fprintf(a.stdout, "serving %s\n", addr)
-	if *openBrowser {
+	if openBrowser {
 		_ = browser.New("", a.stdout, a.stderr).Browse(addr)
 	}
 	return http.Serve(ln, handler)
@@ -894,11 +974,18 @@ func defaultCachePath() string {
 	if override := os.Getenv("GH_ACTIONS_USAGE_CACHE"); override != "" {
 		return override
 	}
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		dir = "."
+	return filepath.Join(xdgCacheHome(), appName, "cache.db")
+}
+
+func xdgCacheHome() string {
+	if dir := os.Getenv("XDG_CACHE_HOME"); dir != "" && filepath.IsAbs(dir) {
+		return dir
 	}
-	return filepath.Join(dir, appName, "cache.db")
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(".", ".cache")
+	}
+	return filepath.Join(home, ".cache")
 }
 
 func createdQuery(since string, until string, days int, now time.Time) (string, error) {
@@ -939,6 +1026,33 @@ func filterRepos(repos []Repo, filter string) []Repo {
 		}
 	}
 	return out
+}
+
+func filterJobsByRepos(jobs []JobRecord, repos []Repo) []JobRecord {
+	if len(repos) == 0 {
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, repo := range repos {
+		allowed[repo.FullName] = true
+	}
+	out := jobs[:0]
+	for _, job := range jobs {
+		if allowed[job.Repo] {
+			out = append(out, job)
+		}
+	}
+	return out
+}
+
+func reportFilters(repo string, since string, until string, days int, now time.Time) QueryFilters {
+	if since == "" && until == "" {
+		if days == 0 {
+			days = 30
+		}
+		since = now.AddDate(0, 0, -days).Format(dateFormat)
+	}
+	return QueryFilters{Repo: repo, Since: since, Until: until}
 }
 
 func splitCSV(value string) []string {
@@ -1187,7 +1301,7 @@ type Cache struct {
 }
 
 func OpenCache(path string) (*Cache, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", path)
@@ -1431,7 +1545,16 @@ func boolInt(v bool) int {
 	return 0
 }
 
+type WebScope struct {
+	Filters QueryFilters
+	Repos   []Repo
+}
+
 func (a *App) webHandler() (http.Handler, error) {
+	return a.webHandlerWithScope(WebScope{})
+}
+
+func (a *App) webHandlerWithScope(scope WebScope) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -1442,12 +1565,12 @@ func (a *App) webHandler() (http.Handler, error) {
 		fmt.Fprint(w, webIndexHTML)
 	})
 	mux.HandleFunc("/api/summary", func(w http.ResponseWriter, r *http.Request) {
-		jobs, err := a.cache.ListJobs(QueryFilters{})
+		jobs, err := a.scopedJobs(scope, 0)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = writeJSON(w, buildSummary(a.cache.Path(), jobs, QueryFilters{}, []string{"repo", "workflow-path", "job", "runner-image"}, a.now()))
+		_ = writeJSON(w, buildSummary(a.cache.Path(), jobs, scope.Filters, []string{"repo", "workflow-path", "job", "runner-image"}, a.now()))
 	})
 	mux.HandleFunc("/api/jobs", func(w http.ResponseWriter, r *http.Request) {
 		limit := 500
@@ -1456,7 +1579,7 @@ func (a *App) webHandler() (http.Handler, error) {
 				limit = parsed
 			}
 		}
-		jobs, err := a.cache.ListJobs(QueryFilters{Limit: limit})
+		jobs, err := a.scopedJobs(scope, limit)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1464,6 +1587,24 @@ func (a *App) webHandler() (http.Handler, error) {
 		_ = writeJSON(w, jobs)
 	})
 	return mux, nil
+}
+
+func (a *App) scopedJobs(scope WebScope, limit int) ([]JobRecord, error) {
+	filters := scope.Filters
+	if len(scope.Repos) == 0 {
+		filters.Limit = limit
+		return a.cache.ListJobs(filters)
+	}
+	filters.Limit = 0
+	jobs, err := a.cache.ListJobs(filters)
+	if err != nil {
+		return nil, err
+	}
+	jobs = filterJobsByRepos(jobs, scope.Repos)
+	if limit > 0 && len(jobs) > limit {
+		jobs = jobs[:limit]
+	}
+	return jobs, nil
 }
 
 func isNotFound(err error) bool {
