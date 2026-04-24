@@ -7,12 +7,13 @@ test:
 
 .PHONY: build
 build:
-	go build -o $(BIN) .
+	mkdir -p bin
+	go build -o bin/$(BIN) .
 
 .PHONY: install-local
 install-local: build
 	mkdir -p $(PREFIX)/bin
-	cp $(BIN) $(PREFIX)/bin/$(BIN)
+	cp bin/$(BIN) $(PREFIX)/bin/$(BIN)
 
 .PHONY: install-gh-local
 install-gh-local:
