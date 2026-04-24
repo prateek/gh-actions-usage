@@ -1,0 +1,105 @@
+# Demo Walkthrough
+
+This demo is designed to be repeatable. Ingest can be run multiple times against
+the same repository and date range; rows are upserted by GitHub IDs.
+
+## 1. Check Setup
+
+```bash
+gh actions-usage doctor --json
+```
+
+Expected shape:
+
+```json
+{
+  "extension": "gh-actions-usage",
+  "auth": { "ok": true, "source": "gh", "login": "YOUR_LOGIN" },
+  "cache": { "ok": true }
+}
+```
+
+## 2. Find a Repository
+
+```bash
+gh actions-usage accounts list
+gh actions-usage repos list --account @me
+```
+
+Pick a repo with recent Actions runs.
+
+## 3. Ingest
+
+```bash
+gh actions-usage ingest actions \
+  --account @me \
+  --repo OWNER/REPO \
+  --since 2026-04-01
+```
+
+Run it again to prove idempotence:
+
+```bash
+gh actions-usage ingest actions \
+  --account @me \
+  --repo OWNER/REPO \
+  --since 2026-04-01
+```
+
+Then inspect cache counts:
+
+```bash
+gh actions-usage cache stats
+```
+
+## 4. Slice the Cache
+
+Top jobs:
+
+```bash
+gh actions-usage jobs list --repo OWNER/REPO --limit 20
+```
+
+Runner/image breakdown:
+
+```bash
+gh actions-usage summary \
+  --repo OWNER/REPO \
+  --group-by date,workflow-path,runner-os,runner-image
+```
+
+Machine-readable output:
+
+```bash
+gh actions-usage summary \
+  --repo OWNER/REPO \
+  --group-by repo,workflow-path,job,runner-image \
+  --json
+```
+
+## 5. Open the Dashboard
+
+```bash
+gh actions-usage serve --open
+```
+
+Demo path through the UI:
+
+1. Start with the runtime metric and failure rate.
+2. Use the flamegraph to identify the largest repo/workflow/job/runner blocks.
+3. Use the histogram to find long-tail jobs.
+4. Filter by `macOS`, `ubuntu`, or a job name.
+5. Use the slowest-job table to jump from aggregate cost to exact jobs.
+
+Keyboard shortcuts:
+
+- `/` focuses search.
+- `t` toggles theme.
+
+## 6. Export
+
+```bash
+gh actions-usage export --out actions-usage-report.json
+```
+
+The export includes cached runs and jobs. It does not refetch data.

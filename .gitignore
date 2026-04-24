@@ -1,2 +1,6 @@
-/gh-actions-usage
-/gh-actions-usage.exe
+gh-actions-usage
+*.db
+*.db-shm
+*.db-wal
+dist/
+bin/

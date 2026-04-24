@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GH Actions Usage</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3efe2;
+      --surface: #fffaf0;
+      --inset: #e8dec9;
+      --border: #d2c4aa;
+      --text: #1f261f;
+      --muted: #6d7565;
+      --accent: #0f766e;
+      --accent-soft: #d6f1e9;
+      --danger: #b42318;
+      --warn: #b7791f;
+      --ok: #19764c;
+      --shadow: 0 18px 60px rgba(80, 67, 41, .16);
+      --sans: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", "SF Mono", monospace;
+    }
+    :root.dark {
+      color-scheme: dark;
+      --bg: #0c1414;
+      --surface: #121c1b;
+      --inset: #0a1111;
+      --border: #273a36;
+      --text: #edf7f3;
+      --muted: #8ba099;
+      --accent: #5eead4;
+      --accent-soft: #102f2b;
+      --danger: #fb7185;
+      --warn: #fbbf24;
+      --ok: #86efac;
+      --shadow: 0 22px 70px rgba(0,0,0,.38);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 24%, transparent), transparent 28rem),
+        var(--bg);
+      color: var(--text);
+      font: 13px var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    .shell { width: min(1460px, calc(100vw - 32px)); margin: 0 auto; padding: 24px 0 40px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: start; margin-bottom: 16px; }
+    h1 { font-size: clamp(34px, 6vw, 72px); line-height: .9; letter-spacing: -.07em; margin: 0; }
+    .sub { color: var(--muted); max-width: 760px; margin-top: 10px; }
+    button, input, select {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 8px 11px;
+      font: inherit;
+    }
+    button { cursor: pointer; }
+    button:hover { background: var(--accent-soft); border-color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+    .card {
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .metric { grid-column: span 3; padding: 18px; min-height: 112px; }
+    .label { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+    .value { font: 30px/1 var(--mono); margin-top: 14px; }
+    .note { color: var(--muted); margin-top: 10px; }
+    .panel { grid-column: span 12; }
+    .split { grid-column: span 12; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(360px, .8fr); gap: 14px; }
+    .panel h2 { margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+    .bar { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); gap: 12px; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px 16px; background: var(--inset); border-bottom: 1px solid var(--border); }
+    .controls input { min-width: min(360px, 100%); }
+    .viz { padding: 16px; }
+    svg { width: 100%; display: block; }
+    .flame-label {
+      fill: white;
+      font: 11px var(--mono);
+      pointer-events: none;
+      paint-order: stroke;
+      stroke: rgba(0,0,0,.36);
+      stroke-width: 3px;
+      stroke-linejoin: round;
+    }
+    .hist { display: grid; gap: 10px; }
+    .bucket { display: grid; grid-template-columns: 86px 1fr 76px; gap: 10px; align-items: center; }
+    .track { height: 24px; border-radius: 99px; background: var(--inset); border: 1px solid var(--border); overflow: hidden; }
+    .fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--warn)); }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { color: var(--muted); background: var(--inset); position: sticky; top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+    .table-wrap { max-height: 560px; overflow: auto; }
+    .mono { font-family: var(--mono); font-size: 12px; }
+    .pill { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; color: var(--muted); }
+    .success { color: var(--ok); }
+    .failure { color: var(--danger); }
+    .cancelled, .skipped { color: var(--warn); }
+    .empty { padding: 32px; color: var(--muted); text-align: center; }
+    @media (max-width: 860px) {
+      header, .split { display: block; }
+      .metric { grid-column: span 6; }
+    }
+    @media (max-width: 560px) {
+      .metric { grid-column: span 12; }
+      .shell { width: calc(100vw - 16px); }
+      .bucket { grid-template-columns: 72px 1fr 54px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>Actions Usage</h1>
+        <div id="subtitle" class="sub">Loading cached GitHub Actions data.</div>
+      </div>
+      <button id="theme" type="button">Theme</button>
+    </header>
+    <section class="grid">
+      <article class="card metric"><div class="label">Runtime</div><div id="runtime" class="value">...</div><div id="runtimeNote" class="note"></div></article>
+      <article class="card metric"><div class="label">Jobs</div><div id="jobs" class="value">...</div><div class="note">matching filters</div></article>
+      <article class="card metric"><div class="label">Longest</div><div id="longest" class="value">...</div><div class="note">single job</div></article>
+      <article class="card metric"><div class="label">Failures</div><div id="failures" class="value">...</div><div class="note">failure or cancelled</div></article>
+      <section class="card panel">
+        <div class="bar"><h2>Filters</h2><span class="note">Shortcuts: / search, t theme</span></div>
+        <div class="controls">
+          <input id="search" type="search" placeholder="Search repo, workflow, job, runner">
+          <select id="repo"></select>
+          <select id="runner"></select>
+          <select id="result"></select>
+        </div>
+      </section>
+      <section class="split">
+        <article class="card">
+          <div class="bar"><h2>Flamegraph</h2><span class="note">repo / workflow / job / runner</span></div>
+          <div class="viz"><svg id="flamegraph" role="img" aria-label="Runtime flamegraph"></svg></div>
+        </article>
+        <article class="card">
+          <div class="bar"><h2>Histogram</h2><span class="note">job duration buckets</span></div>
+          <div id="histogram" class="viz hist"></div>
+        </article>
+      </section>
+      <section class="card panel">
+        <div class="bar"><h2>Slowest jobs</h2><span id="tableNote" class="note"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Repo</th><th>Workflow</th><th>Job</th><th>Runner</th><th>Result</th><th>Duration</th></tr></thead>
+            <tbody id="table"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script>
+    const state = { jobs: [], filtered: [], theme: localStorage.getItem("gh-actions-usage-theme") || "dark" };
+    const $ = (id) => document.getElementById(id);
+    const els = {
+      subtitle: $("subtitle"), runtime: $("runtime"), runtimeNote: $("runtimeNote"), jobs: $("jobs"),
+      longest: $("longest"), failures: $("failures"), search: $("search"), repo: $("repo"),
+      runner: $("runner"), result: $("result"), flamegraph: $("flamegraph"), histogram: $("histogram"),
+      table: $("table"), tableNote: $("tableNote")
+    };
+    function setTheme(theme) {
+      state.theme = theme;
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      localStorage.setItem("gh-actions-usage-theme", theme);
+    }
+    function duration(seconds) {
+      seconds = Math.max(0, Math.round(seconds || 0));
+      const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
+      if (h) return `${h}h ${m}m`;
+      if (m) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+    function uniq(values) { return [...new Set(values.filter(Boolean))].sort(); }
+    function optionize(select, label, values) {
+      select.innerHTML = `<option value="">${label}</option>` + values.map(v => `<option>${escapeHtml(v)}</option>`).join("");
+    }
+    function text(job) { return [job.repo, job.workflow_path, job.workflow_name, job.name, job.runner?.image, job.runner?.os, job.conclusion].join(" ").toLowerCase(); }
+    function apply() {
+      const q = els.search.value.toLowerCase().trim();
+      state.filtered = state.jobs.filter(job => (!q || text(job).includes(q)) &&
+        (!els.repo.value || job.repo === els.repo.value) &&
+        (!els.runner.value || (job.runner?.os || "unknown") === els.runner.value) &&
+        (!els.result.value || job.conclusion === els.result.value));
+      render();
+    }
+    function render() {
+      const total = state.filtered.reduce((sum, job) => sum + (job.duration_seconds || 0), 0);
+      const longest = Math.max(0, ...state.filtered.map(job => job.duration_seconds || 0));
+      const failures = state.filtered.filter(job => ["failure", "cancelled", "timed_out"].includes(job.conclusion)).length;
+      els.runtime.textContent = duration(total);
+      els.runtimeNote.textContent = `${(total / 60).toFixed(1)} minutes`;
+      els.jobs.textContent = state.filtered.length.toLocaleString();
+      els.longest.textContent = duration(longest);
+      els.failures.textContent = state.filtered.length ? `${((failures / state.filtered.length) * 100).toFixed(1)}%` : "0%";
+      renderFlamegraph();
+      renderHistogram();
+      renderTable();
+    }
+    function tree() {
+      const root = { name: "all", value: 0, children: new Map(), depth: 0 };
+      for (const job of state.filtered) {
+        const seconds = Math.max(0, job.duration_seconds || 0);
+        root.value += seconds;
+        let node = root;
+        for (const name of [job.repo, job.workflow_path || job.workflow_name, job.name, job.runner?.image || job.runner?.os || "unknown"]) {
+          const key = name || "unknown";
+          if (!node.children.has(key)) node.children.set(key, { name: key, value: 0, children: new Map(), depth: node.depth + 1 });
+          node = node.children.get(key);
+          node.value += seconds;
+        }
+      }
+      return root;
+    }
+    function layout(node, x, y, width, rows) {
+      for (const child of [...node.children.values()].sort((a, b) => b.value - a.value)) {
+        if (child.value <= 0) continue;
+        const w = width * child.value / node.value;
+        rows.push({ node: child, x, y, width: w, height: 32 });
+        layout(child, x, y + 36, w, rows);
+        x += w;
+      }
+    }
+    function renderFlamegraph() {
+      const root = tree(), rows = [], width = 1200;
+      if (root.value > 0) layout(root, 0, 0, width, rows);
+      const height = Math.max(70, rows.reduce((m, r) => Math.max(m, r.y + r.height), 0) + 6);
+      els.flamegraph.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      els.flamegraph.innerHTML = rows.length ? rows.map(r => {
+        const label = r.width > 80 ? `${r.node.name} ${duration(r.node.value)}` : "";
+        return `<g><rect x="${r.x.toFixed(2)}" y="${r.y}" width="${Math.max(0, r.width - 1).toFixed(2)}" height="${r.height}" rx="7" fill="${color(r.node.name, r.node.depth)}"></rect><text class="flame-label" x="${(r.x + 8).toFixed(2)}" y="${r.y + 21}">${escapeHtml(label)}</text></g>`;
+      }).join("") : `<text x="24" y="42" fill="currentColor">No cached job data yet. Run ingest first.</text>`;
+    }
+    function renderHistogram() {
+      const buckets = [["<30s",0,30],["30s-1m",30,60],["1m-2m",60,120],["2m-5m",120,300],["5m-10m",300,600],["10m-20m",600,1200],["20m+",1200,Infinity]].map(([label,min,max]) => ({ label, min, max, count: 0 }));
+      for (const job of state.filtered) buckets.find(b => (job.duration_seconds || 0) >= b.min && (job.duration_seconds || 0) < b.max).count++;
+      const max = Math.max(1, ...buckets.map(b => b.count));
+      els.histogram.innerHTML = buckets.map(b => `<div class="bucket"><span class="mono">${b.label}</span><div class="track"><div class="fill" style="width:${Math.max(2, b.count / max * 100)}%"></div></div><span class="mono">${b.count}</span></div>`).join("");
+    }
+    function renderTable() {
+      const rows = [...state.filtered].sort((a, b) => (b.duration_seconds || 0) - (a.duration_seconds || 0)).slice(0, 200);
+      els.tableNote.textContent = `${rows.length} shown of ${state.filtered.length}`;
+      els.table.innerHTML = rows.length ? rows.map(job => `<tr><td class="mono">${(job.started_at || "").slice(0,10)}</td><td>${escapeHtml(job.repo)}</td><td>${escapeHtml(job.workflow_path || job.workflow_name || "unknown")}</td><td>${escapeHtml(job.name)}</td><td><span class="pill">${escapeHtml(job.runner?.image || job.runner?.os || "unknown")}</span></td><td><span class="pill ${escapeHtml(job.conclusion)}">${escapeHtml(job.conclusion)}</span></td><td class="mono">${duration(job.duration_seconds)}</td></tr>`).join("") : `<tr><td class="empty" colspan="7">No jobs match.</td></tr>`;
+    }
+    function color(text, depth) {
+      let hash = depth * 29;
+      for (const ch of text) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0;
+      return `hsl(${Math.abs(hash) % 360} 58% ${state.theme === "dark" ? 42 : 38}%)`;
+    }
+    function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch])); }
+    async function load() {
+      setTheme(state.theme);
+      const summary = await fetch("/api/summary").then(r => r.json());
+      state.jobs = await fetch("/api/jobs?limit=20000").then(r => r.json());
+      els.subtitle.textContent = `${summary.total_jobs.toLocaleString()} cached jobs, ${summary.total_minutes.toFixed(1)} minutes.`;
+      optionize(els.repo, "All repos", uniq(state.jobs.map(j => j.repo)));
+      optionize(els.runner, "All runners", uniq(state.jobs.map(j => j.runner?.os || "unknown")));
+      optionize(els.result, "All results", uniq(state.jobs.map(j => j.conclusion || "unknown")));
+      apply();
+    }
+    $("theme").addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
+    [els.search, els.repo, els.runner, els.result].forEach(el => el.addEventListener("input", apply));
+    document.addEventListener("keydown", e => {
+      const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
+      if (e.key === "/" && !typing) { e.preventDefault(); els.search.focus(); }
+      if (e.key === "t" && !typing) setTheme(state.theme === "dark" ? "light" : "dark");
+    });
+    load().catch(err => { els.subtitle.textContent = err.message || String(err); });
+  </script>
+</body>
+</html>
