@@ -1,11 +1,11 @@
 # gh-actions-usage: cached Actions analytics demo
 
-*2026-04-24T22:27:57Z by Showboat 0.6.1*
-<!-- showboat-id: 2a1c0fea-a6af-46a9-98a2-2b2e33a47da6 -->
+*2026-04-24T23:38:40Z by Showboat 0.6.1*
+<!-- showboat-id: 5de7e017-922d-47d3-b296-45823d7994f2 -->
 
-This demo runs the CLI without calling GitHub. It imports a checked-in export
-fixture twice, checks the SQLite row counts, slices runtime by runner image, and
-opens the dashboard with Rodney.
+This demo runs without calling GitHub. It imports the checked-in fixture, proves
+that repeated imports are idempotent, slices the cache by runner image, and opens
+the local dashboard with Rodney. Every command prints the evidence it depends on.
 
 ```bash
 set -euo pipefail
@@ -15,6 +15,7 @@ printf "cache=%s\n" "$GH_ACTIONS_USAGE_CACHE"
 go run . import --in testdata/demo-export.json --json | jq "{repos_imported,runs_imported,jobs_imported}"
 go run . import --in testdata/demo-export.json --json | jq "{repos_imported,runs_imported,jobs_imported}"
 go run . cache stats | jq .
+
 ```
 
 ```output
@@ -37,8 +38,8 @@ cache=/tmp/gh-actions-usage-showboat-import.db
 }
 ```
 
-Both import commands read the same seven jobs. The cache keeps one row per
-GitHub ID, so the loader can run more than once.
+Both imports read the same seven jobs. The cache stores one row per GitHub ID, so
+running the loader again updates rows instead of duplicating them.
 
 ```bash
 set -euo pipefail
@@ -46,6 +47,7 @@ export GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-showboat-summary.db
 rm -f "$GH_ACTIONS_USAGE_CACHE" "$GH_ACTIONS_USAGE_CACHE-shm" "$GH_ACTIONS_USAGE_CACHE-wal"
 go run . import --in testdata/demo-export.json >/dev/null
 go run . summary --group-by date,repo,workflow-path,runner-os,runner-image
+
 ```
 
 ```output
@@ -58,8 +60,8 @@ date        repo             workflow-path               runner-os  runner-image
 2026-04-24  demo/mobile-app  .github/workflows/ci.yml    Linux      ubuntu-latest  3     7.5      2m30s   3m20s
 ```
 
-In this fixture, two macOS jobs use most of the runtime. The Linux jobs are
-shorter.
+The macOS jobs are the expensive part of this fixture: two jobs account for most
+of the runtime. The next view shows the slowest individual jobs.
 
 ```bash
 set -euo pipefail
@@ -67,6 +69,7 @@ export GH_ACTIONS_USAGE_CACHE=/tmp/gh-actions-usage-showboat-jobs.db
 rm -f "$GH_ACTIONS_USAGE_CACHE" "$GH_ACTIONS_USAGE_CACHE-shm" "$GH_ACTIONS_USAGE_CACHE-wal"
 go run . import --in testdata/demo-export.json >/dev/null
 go run . jobs list --limit 4
+
 ```
 
 ```output
@@ -77,9 +80,9 @@ started     repo             workflow                    job         runner     
 2026-04-24  demo/mobile-app  .github/workflows/ci.yml    unit tests  ubuntu-latest  success  3m20s
 ```
 
-The dashboard reads the same cache through `/api/summary` and `/api/jobs`.
-Rodney opens the page, checks that cached rows rendered, and captures the
-screenshot.
+The dashboard uses the same cache through `/api/summary` and `/api/jobs`.
+Rodney starts Chrome, opens the dashboard, checks that the flamegraph and table
+rendered, and captures a screenshot.
 
 ```bash
 set -euo pipefail
@@ -111,25 +114,93 @@ if [ "$ready" -ne 1 ]; then
   cat /tmp/gh-actions-usage-demo-server.err >&2
   exit 1
 fi
+printf "server: "
+cat /tmp/gh-actions-usage-demo-server.out
+printf "api summary:\n"
+jq '{total_jobs,total_minutes,top_groups: [.groups[] | {repo: .values.repo, job: .values.job, runner_image: .values["runner-image"], minutes: .total_minutes}]}' /tmp/gh-actions-usage-demo-summary.json
 uvx rodney start >/tmp/gh-actions-usage-rodney-start.out
-uvx rodney open http://127.0.0.1:18184/ >/tmp/gh-actions-usage-rodney-open.out
-uvx rodney wait "#flamegraph" >/tmp/gh-actions-usage-rodney-wait.out
-uvx rodney assert "document.body.innerText.includes(\"Actions Usage\")" true >/tmp/gh-actions-usage-rodney-assert1.out
-uvx rodney assert "document.querySelectorAll(\"#table tr\").length > 1" true >/tmp/gh-actions-usage-rodney-assert2.out
-uvx rodney js "({title: document.title, rows: document.querySelectorAll(\"#table tr\").length})"
+printf "rodney start: "
+sed -E 's/PID [0-9]+/PID <pid>/; s#ws://127\.0\.0\.1:[0-9]+/devtools/browser/[A-Za-z0-9-]+#ws://127.0.0.1:<port>/devtools/browser/<id>#' /tmp/gh-actions-usage-rodney-start.out
+printf "rodney open: "
+uvx rodney open http://127.0.0.1:18184/
+printf "rodney wait: "
+uvx rodney wait "#flamegraph"
+printf "rodney title: "
+uvx rodney title
+printf "rodney assertions:\n"
+uvx rodney assert "document.body.innerText.includes(\"Actions Usage\")" true
+uvx rodney assert "document.querySelectorAll(\"#table tr\").length > 1" true
+printf "rodney page data:\n"
+uvx rodney js "({title: document.title, rows: document.querySelectorAll(\"#table tr\").length, flamegraph: Boolean(document.querySelector(\"#flamegraph\")), histogram: Boolean(document.querySelector(\"#histogram\"))})"
 uvx rodney screenshot -w 1440 -h 1100 docs/assets/dashboard.png
+file docs/assets/dashboard.png
+
 ```
 
 ```output
+server: serving http://127.0.0.1:18184
+api summary:
 {
+  "total_jobs": 7,
+  "total_minutes": 56.5,
+  "top_groups": [
+    {
+      "repo": "demo/mobile-app",
+      "job": "ios tests",
+      "runner_image": "macos-15",
+      "minutes": 41.5
+    },
+    {
+      "repo": "demo/mobile-app",
+      "job": "unit tests",
+      "runner_image": "ubuntu-latest",
+      "minutes": 6.333333333333333
+    },
+    {
+      "repo": "demo/api",
+      "job": "api tests",
+      "runner_image": "ubuntu-latest",
+      "minutes": 5
+    },
+    {
+      "repo": "demo/api",
+      "job": "package",
+      "runner_image": "ubuntu-latest",
+      "minutes": 2.5
+    },
+    {
+      "repo": "demo/mobile-app",
+      "job": "lint",
+      "runner_image": "ubuntu-latest",
+      "minutes": 1.1666666666666667
+    }
+  ]
+}
+rodney start: Chrome started (PID <pid>)
+Debug URL: ws://127.0.0.1:<port>/devtools/browser/<id>
+rodney open: GH Actions Usage
+rodney wait: Element visible
+rodney title: GH Actions Usage
+rodney assertions:
+pass
+pass
+rodney page data:
+{
+  "flamegraph": true,
+  "histogram": true,
   "rows": 7,
   "title": "GH Actions Usage"
 }
 docs/assets/dashboard.png
+docs/assets/dashboard.png: PNG image data, 1440 x 1100, 8-bit/color RGB, non-interlaced
 ```
+
+Showboat embeds the Rodney screenshot below. The image is copied into the docs
+folder so the Markdown preview has the same visual evidence as the terminal
+transcript.
 
 ```bash {image}
-![Embedded dashboard showing flamegraph, histogram, metrics, and slowest jobs](docs/assets/dashboard.png)
+![Dashboard screenshot with flamegraph, histogram, summary metric cards, and slowest jobs table](docs/assets/dashboard.png)
 ```
 
-![Embedded dashboard showing flamegraph, histogram, metrics, and slowest jobs](b973af56-2026-04-24.png)
+![Dashboard screenshot with flamegraph, histogram, summary metric cards, and slowest jobs table](7325e2e6-2026-04-24.png)
