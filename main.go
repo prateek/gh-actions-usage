@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,6 +33,17 @@ const (
 
 //go:embed web/index.html
 var webIndexHTML string
+
+var (
+	openCacheFunc  = OpenCache
+	restClientFunc = func() (APIClient, error) {
+		return api.DefaultRESTClient()
+	}
+	serveHTTPFunc = http.Serve
+	browseURLFunc = func(addr string, stdout io.Writer, stderr io.Writer) error {
+		return browser.New("", stdout, stderr).Browse(addr)
+	}
+)
 
 type APIClient interface {
 	Get(path string, resp interface{}) error
@@ -344,25 +354,29 @@ type WorkflowJobAPI struct {
 }
 
 func main() {
-	stdout := os.Stdout
-	stderr := os.Stderr
+	os.Exit(runMain(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
 	cachePath := defaultCachePath()
-	cache, err := OpenCache(cachePath)
+	cache, err := openCacheFunc(cachePath)
 	if err != nil {
-		log.Fatalf("open cache: %v", err)
+		fmt.Fprintf(stderr, "error: open cache: %v\n", err)
+		return 1
 	}
 	defer cache.Close()
 
-	client, err := api.DefaultRESTClient()
+	client, err := restClientFunc()
 	if err != nil {
 		client = nil
 	}
 
 	app := &App{stdout: stdout, stderr: stderr, client: client, cache: cache, now: time.Now}
-	if err := app.Run(context.Background(), os.Args[1:]); err != nil {
+	if err := app.Run(ctx, args); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func (a *App) Run(ctx context.Context, args []string) error {
@@ -1351,9 +1365,9 @@ func (a *App) serveWithScope(scope WebScope, listen string, openBrowser bool) er
 	addr := "http://" + ln.Addr().String()
 	fmt.Fprintf(a.stdout, "serving %s\n", addr)
 	if openBrowser {
-		_ = browser.New("", a.stdout, a.stderr).Browse(addr)
+		_ = browseURLFunc(addr, a.stdout, a.stderr)
 	}
-	return http.Serve(ln, handler)
+	return serveHTTPFunc(ln, handler)
 }
 
 func (a *App) cmdAPI(args []string) error {

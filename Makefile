@@ -2,17 +2,20 @@ BIN := gh-actions-usage
 PREFIX ?= $(HOME)/.local
 REMOTE ?= origin
 SHOWBOAT_DOC ?= docs/showboat-demo.md
+COVERAGE_MIN ?= 95.0
 
 .PHONY: test
-test: test-unit test-integration test-e2e
+test: test-go test-e2e
+
+.PHONY: test-go
+test-go:
+	go test ./...
 
 .PHONY: test-unit
-test-unit:
-	go test ./... -run '^Test(CreatedQuery|DefaultCachePath.*|RepoUnmarshalCapturesOwnerAndRaw|RunnerMetadata|BillingUsageEndpointSupportsEnterpriseFilters|SummaryGroupsByWorkflowAndRunner)$$'
+test-unit: test-go
 
 .PHONY: test-integration
-test-integration:
-	go test ./... -run '^Test(CacheUpsertsAreIdempotent|OpenCacheCreatesParentDirectoryPrivate|RunSummaryCommandReadsCache|ReportCommand.*|Billing.*|TopLevelIngestCommandIsNotPublic|DoctorIngestActionsRunsManualRefresh|ServeRefreshRequiresAPIClient|ImportCommandIsIdempotent|ExportCommandIncludesRepos|WebHandler.*)$$'
+test-integration: test-go
 
 .PHONY: test-e2e
 test-e2e:
@@ -35,10 +38,19 @@ install-gh-local:
 
 .PHONY: fmt
 fmt:
-	gofmt -w main.go main_test.go
+	gofmt -w *.go
+
+.PHONY: coverage
+coverage:
+	@tmp="$$(mktemp)"; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	go test ./... -coverprofile="$$tmp"; \
+	go tool cover -func="$$tmp"; \
+	total="$$(go tool cover -func="$$tmp" | awk '/^total:/ {gsub(/%/,"",$$3); print $$3}')"; \
+	awk -v total="$$total" -v min="$(COVERAGE_MIN)" 'BEGIN { if (total + 0 < min + 0) { printf("coverage %.1f%% below %.1f%%\n", total, min); exit 1 } printf("coverage %.1f%% meets %.1f%%\n", total, min) }'
 
 .PHONY: check
-check: fmt test build
+check: fmt test coverage build
 	git diff --check
 
 .PHONY: docs-check
