@@ -114,8 +114,7 @@ if [ "$ready" -ne 1 ]; then
   cat /tmp/gh-actions-usage-demo-server.err >&2
   exit 1
 fi
-printf "server: "
-cat /tmp/gh-actions-usage-demo-server.out
+printf "server: serving http://127.0.0.1:18184\n"
 printf "api summary:\n"
 jq '{total_jobs,total_minutes,top_groups: [.groups[] | {repo: .values.repo, job: .values.job, runner_image: .values["runner-image"], minutes: .total_minutes}]}' /tmp/gh-actions-usage-demo-summary.json
 uvx rodney start >/tmp/gh-actions-usage-rodney-start.out

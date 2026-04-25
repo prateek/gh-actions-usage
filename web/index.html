@@ -7,172 +7,598 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f3efe2;
-      --surface: #fffaf0;
-      --inset: #e8dec9;
-      --border: #d2c4aa;
-      --text: #1f261f;
-      --muted: #6d7565;
-      --accent: #0f766e;
-      --accent-soft: #d6f1e9;
-      --danger: #b42318;
-      --warn: #b7791f;
-      --ok: #19764c;
-      --shadow: 0 18px 60px rgba(80, 67, 41, .16);
-      --sans: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
-      --mono: "JetBrains Mono", "SF Mono", monospace;
+      --bg-primary: #f4efe4;
+      --bg-radial-a: rgba(13, 118, 110, .20);
+      --bg-radial-b: rgba(191, 97, 31, .14);
+      --bg-surface: #fffaf0;
+      --bg-surface-raised: #fffdf7;
+      --bg-surface-hover: #f4ebda;
+      --bg-inset: #e9deca;
+      --bg-overlay: rgba(36, 31, 21, .20);
+      --border-default: #d4c5a9;
+      --border-muted: #e7dbc5;
+      --text-primary: #1d241f;
+      --text-secondary: #5d685e;
+      --text-muted: #818878;
+      --accent-primary: #0f766e;
+      --accent-secondary: #b45309;
+      --accent-blue: #2563eb;
+      --accent-rose: #dc2626;
+      --accent-green: #14804a;
+      --accent-amber: #b7791f;
+      --accent-cyan: #0891b2;
+      --accent-purple: #7c3aed;
+      --role-paid: #fff1d8;
+      --role-free: #e6f7ed;
+      --role-risk: #ffe7e4;
+      --shadow-sm: 0 1px 2px rgba(70, 58, 38, .08);
+      --shadow-md: 0 10px 34px rgba(70, 58, 38, .13);
+      --shadow-lg: 0 26px 90px rgba(70, 58, 38, .20);
+      --font-sans: "Avenir Next", "IBM Plex Sans", "Trebuchet MS", sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Menlo, monospace;
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 24px;
+      --row-height: 44px;
+      --ease: 160ms ease;
     }
     :root.dark {
       color-scheme: dark;
-      --bg: #0c1414;
-      --surface: #121c1b;
-      --inset: #0a1111;
-      --border: #273a36;
-      --text: #edf7f3;
-      --muted: #8ba099;
-      --accent: #5eead4;
-      --accent-soft: #102f2b;
-      --danger: #fb7185;
-      --warn: #fbbf24;
-      --ok: #86efac;
-      --shadow: 0 22px 70px rgba(0,0,0,.38);
+      --bg-primary: #0b1315;
+      --bg-radial-a: rgba(94, 234, 212, .16);
+      --bg-radial-b: rgba(251, 191, 36, .10);
+      --bg-surface: #111c1e;
+      --bg-surface-raised: #172326;
+      --bg-surface-hover: #1f3033;
+      --bg-inset: #081012;
+      --bg-overlay: rgba(0, 0, 0, .48);
+      --border-default: #284044;
+      --border-muted: #1b3033;
+      --text-primary: #edf7f3;
+      --text-secondary: #a2b8b4;
+      --text-muted: #77908c;
+      --accent-primary: #5eead4;
+      --accent-secondary: #fbbf24;
+      --accent-blue: #60a5fa;
+      --accent-rose: #fb7185;
+      --accent-green: #86efac;
+      --accent-amber: #fbbf24;
+      --accent-cyan: #67e8f9;
+      --accent-purple: #c4b5fd;
+      --role-paid: #261d0c;
+      --role-free: #0c2217;
+      --role-risk: #2b1215;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .30);
+      --shadow-md: 0 12px 34px rgba(0, 0, 0, .34);
+      --shadow-lg: 0 28px 90px rgba(0, 0, 0, .46);
     }
     * { box-sizing: border-box; }
+    html { min-height: 100%; }
     body {
       margin: 0;
       min-height: 100vh;
       background:
-        radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 24%, transparent), transparent 28rem),
-        var(--bg);
-      color: var(--text);
-      font: 13px var(--sans);
+        radial-gradient(circle at 8% -8%, var(--bg-radial-a), transparent 32rem),
+        radial-gradient(circle at 92% 8%, var(--bg-radial-b), transparent 34rem),
+        linear-gradient(135deg, color-mix(in srgb, var(--bg-primary) 86%, var(--accent-primary) 14%), var(--bg-primary) 42%);
+      color: var(--text-primary);
+      font: 13px/1.45 var(--font-sans);
+      font-feature-settings: "tnum";
       -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
-    .shell { width: min(1460px, calc(100vw - 32px)); margin: 0 auto; padding: 24px 0 40px; }
-    header { display: flex; justify-content: space-between; gap: 16px; align-items: start; margin-bottom: 16px; }
-    h1 { font-size: clamp(34px, 6vw, 72px); line-height: .9; letter-spacing: -.07em; margin: 0; }
-    .sub { color: var(--muted); max-width: 760px; margin-top: 10px; }
+    body.compact { --row-height: 36px; }
+    body.comfortable { --row-height: 52px; }
+    ::selection { background: color-mix(in srgb, var(--accent-primary) 28%, transparent); }
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-muted) 42%, transparent); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+    :focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
     button, input, select {
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-default);
       border-radius: 999px;
-      background: var(--surface);
-      color: var(--text);
-      padding: 8px 11px;
+      background: var(--bg-surface-raised);
+      color: var(--text-primary);
+      padding: 8px 12px;
       font: inherit;
+      min-height: 36px;
     }
-    button { cursor: pointer; }
-    button:hover { background: var(--accent-soft); border-color: var(--accent); }
-    .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+    button { cursor: pointer; transition: background var(--ease), border-color var(--ease), transform var(--ease); }
+    button:hover { background: var(--bg-surface-hover); border-color: color-mix(in srgb, var(--accent-primary) 70%, var(--border-default)); }
+    button:active { transform: translateY(1px); }
+    input[type="search"] { min-width: min(34rem, 100%); }
+    .shell { width: min(1540px, calc(100vw - 32px)); margin: 0 auto; padding: 20px 0 38px; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font: 700 11px/1 var(--font-mono);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .pulse {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--accent-green);
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-green) 16%, transparent);
+    }
+    h1 {
+      margin: 9px 0 8px;
+      font-size: clamp(42px, 7vw, 94px);
+      line-height: .82;
+      letter-spacing: -.085em;
+    }
+    .subtitle { max-width: 780px; color: var(--text-secondary); font-size: 14px; }
+    .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .button-strong {
+      background: color-mix(in srgb, var(--accent-primary) 18%, var(--bg-surface-raised));
+      border-color: color-mix(in srgb, var(--accent-primary) 62%, var(--border-default));
+    }
+    .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 7px;
+      border: 1px solid var(--border-default);
+      background: var(--bg-inset);
+      color: var(--text-secondary);
+      font: 11px var(--font-mono);
+      box-shadow: var(--shadow-sm);
+    }
+    .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; align-items: start; }
     .card {
-      background: color-mix(in srgb, var(--surface) 94%, transparent);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      box-shadow: var(--shadow);
+      background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
       overflow: hidden;
+      backdrop-filter: blur(18px);
     }
-    .metric { grid-column: span 3; padding: 18px; min-height: 112px; }
-    .label { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
-    .value { font: 30px/1 var(--mono); margin-top: 14px; }
-    .note { color: var(--muted); margin-top: 10px; }
+    .metric {
+      grid-column: span 3;
+      min-height: 126px;
+      padding: 17px;
+      position: relative;
+    }
+    .metric::after {
+      content: "";
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--metric-accent, var(--accent-primary)) 13%, transparent);
+      transform: rotate(10deg);
+    }
+    .label { color: var(--text-muted); text-transform: uppercase; letter-spacing: .11em; font: 700 10px/1 var(--font-mono); }
+    .value { position: relative; z-index: 1; margin-top: 13px; font: 700 31px/1 var(--font-mono); letter-spacing: -.05em; }
+    .note { color: var(--text-muted); font-size: 12px; }
+    .metric .note { position: relative; z-index: 1; margin-top: 10px; }
+    .metric-paid { --metric-accent: var(--accent-amber); }
+    .metric-risk { --metric-accent: var(--accent-rose); }
+    .metric-fast { --metric-accent: var(--accent-cyan); }
     .panel { grid-column: span 12; }
-    .split { grid-column: span 12; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(360px, .8fr); gap: 14px; }
-    .panel h2 { margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-    .bar { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); gap: 12px; }
-    .controls { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px 16px; background: var(--inset); border-bottom: 1px solid var(--border); }
-    .controls input { min-width: min(360px, 100%); }
+    .split {
+      grid-column: span 12;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr);
+      gap: 14px;
+    }
+    .data-grid {
+      grid-column: span 12;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(310px, 380px);
+      gap: 14px;
+    }
+    .bar {
+      min-height: 52px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border-muted);
+      background: linear-gradient(180deg, color-mix(in srgb, var(--bg-surface-raised) 72%, transparent), transparent);
+    }
+    .bar h2 { margin: 0; font: 800 11px/1 var(--font-mono); letter-spacing: .11em; text-transform: uppercase; }
+    .bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .controls {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+      padding: 14px 16px;
+      background: color-mix(in srgb, var(--bg-inset) 82%, transparent);
+      border-bottom: 1px solid var(--border-muted);
+    }
+    .segmented {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      background: var(--bg-inset);
+    }
+    .segmented button {
+      border: 0;
+      min-height: 29px;
+      padding: 5px 10px;
+      background: transparent;
+      color: var(--text-secondary);
+    }
+    .segmented button.active {
+      background: var(--bg-surface-raised);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
     .viz { padding: 16px; }
     svg { width: 100%; display: block; }
     .flame-label {
       fill: white;
-      font: 11px var(--mono);
+      font: 11px var(--font-mono);
       pointer-events: none;
       paint-order: stroke;
-      stroke: rgba(0,0,0,.36);
+      stroke: rgba(0,0,0,.38);
       stroke-width: 3px;
       stroke-linejoin: round;
     }
     .hist { display: grid; gap: 10px; }
     .bucket { display: grid; grid-template-columns: 86px 1fr 76px; gap: 10px; align-items: center; }
-    .track { height: 24px; border-radius: 99px; background: var(--inset); border: 1px solid var(--border); overflow: hidden; }
-    .fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--warn)); }
-    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-    th, td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; }
-    th { color: var(--muted); background: var(--inset); position: sticky; top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-    .table-wrap { max-height: 560px; overflow: auto; }
-    .mono { font-family: var(--mono); font-size: 12px; }
-    .pill { display: inline-block; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; color: var(--muted); }
-    .success { color: var(--ok); }
-    .failure { color: var(--danger); }
-    .cancelled, .skipped { color: var(--warn); }
-    .empty { padding: 32px; color: var(--muted); text-align: center; }
-    @media (max-width: 860px) {
-      header, .split { display: block; }
-      .metric { grid-column: span 6; }
+    .track {
+      height: 24px;
+      border-radius: 99px;
+      background: var(--bg-inset);
+      border: 1px solid var(--border-muted);
+      overflow: hidden;
     }
-    @media (max-width: 560px) {
+    .fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary)); }
+    .heatmap {
+      display: grid;
+      grid-template-columns: repeat(24, minmax(0, 1fr));
+      gap: 4px;
+      padding: 16px;
+    }
+    .heat-cell {
+      min-height: 38px;
+      border-radius: 10px;
+      border: 1px solid var(--border-muted);
+      background: color-mix(in srgb, var(--accent-primary) calc(var(--heat) * 1%), var(--bg-inset));
+      position: relative;
+      overflow: hidden;
+    }
+    .heat-cell span {
+      position: absolute;
+      inset: auto 6px 5px 6px;
+      color: color-mix(in srgb, var(--text-primary) 82%, white);
+      font: 10px var(--font-mono);
+    }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 0 12px; height: var(--row-height); border-bottom: 1px solid var(--border-muted); text-align: left; vertical-align: middle; }
+    th {
+      color: var(--text-muted);
+      background: var(--bg-inset);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      font: 800 10px/1 var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    tr { cursor: default; }
+    tbody tr:hover { background: color-mix(in srgb, var(--accent-primary) 7%, transparent); }
+    tbody tr.selected { background: color-mix(in srgb, var(--accent-primary) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent-primary); }
+    .table-wrap { max-height: 590px; overflow: auto; }
+    .mono { font-family: var(--font-mono); font-size: 12px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: var(--text-secondary);
+      background: color-mix(in srgb, var(--bg-surface-raised) 82%, transparent);
+      white-space: nowrap;
+    }
+    .pill-dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+    .success { color: var(--accent-green); }
+    .failure, .timed_out { color: var(--accent-rose); }
+    .cancelled, .skipped { color: var(--accent-amber); }
+    .empty { padding: 36px; color: var(--text-muted); text-align: center; }
+    .inspector { padding: 16px; display: grid; gap: 14px; }
+    .inspector-title { margin: 0; font-size: 21px; line-height: 1.1; letter-spacing: -.03em; }
+    .definition {
+      display: grid;
+      grid-template-columns: 94px 1fr;
+      gap: 8px 12px;
+      margin: 0;
+    }
+    .definition dt { color: var(--text-muted); font: 10px/1.5 var(--font-mono); text-transform: uppercase; letter-spacing: .09em; }
+    .definition dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+    .insight-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 16px; }
+    .insight {
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      align-items: center;
+      gap: 11px;
+      padding: 10px;
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius-md);
+      background: var(--bg-surface-raised);
+    }
+    .insight-icon {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--accent-primary) 13%, transparent);
+      color: var(--accent-primary);
+      font: 800 13px var(--font-mono);
+    }
+    .insight strong { display: block; }
+    .insight small { color: var(--text-muted); }
+    .statusbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-top: 14px;
+      padding: 9px 12px;
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--bg-surface-raised) 90%, transparent);
+      box-shadow: var(--shadow-lg);
+      backdrop-filter: blur(16px);
+      color: var(--text-secondary);
+    }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 12vh 18px 18px;
+      background: var(--bg-overlay);
+      backdrop-filter: blur(10px);
+    }
+    .overlay.open { display: flex; }
+    .palette, .shortcuts {
+      width: min(720px, 100%);
+      border: 1px solid var(--border-default);
+      border-radius: 26px;
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+    }
+    .palette input {
+      width: 100%;
+      border: 0;
+      border-radius: 0;
+      min-height: 58px;
+      padding: 0 18px;
+      background: var(--bg-surface-raised);
+      font-size: 16px;
+    }
+    .command-list { max-height: 380px; overflow: auto; padding: 8px; }
+    .command {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 44px;
+      border: 0;
+      border-radius: 14px;
+      background: transparent;
+      text-align: left;
+      color: var(--text-primary);
+    }
+    .command.active, .command:hover { background: var(--bg-surface-hover); }
+    .shortcuts { padding: 18px; }
+    .shortcut-grid { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    @media (max-width: 980px) {
+      .topbar, .split, .data-grid { display: block; }
+      .actions { justify-content: flex-start; margin-top: 14px; }
+      .metric { grid-column: span 6; }
+      .insight-list { grid-template-columns: 1fr; }
+      .split > *, .data-grid > * { margin-bottom: 14px; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: calc(100vw - 18px); padding-top: 12px; }
       .metric { grid-column: span 12; }
-      .shell { width: calc(100vw - 16px); }
       .bucket { grid-template-columns: 72px 1fr 54px; }
+      .heatmap { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+      .definition { grid-template-columns: 1fr; }
+      th:nth-child(3), td:nth-child(3), th:nth-child(5), td:nth-child(5) { display: none; }
+    }
+    @media (pointer: coarse) {
+      button, input, select { min-height: 44px; }
     }
   </style>
 </head>
 <body>
   <main class="shell">
-    <header>
+    <header class="topbar">
       <div>
+        <div class="eyebrow"><span class="pulse" aria-hidden="true"></span><span id="cacheState">Reading local cache</span></div>
         <h1>Actions Usage</h1>
-        <div id="subtitle" class="sub">Loading cached GitHub Actions data.</div>
+        <div id="subtitle" class="subtitle" aria-live="polite">Loading cached GitHub Actions data.</div>
       </div>
-      <button id="theme" type="button">Theme</button>
+      <div class="actions" aria-label="Dashboard actions">
+        <button id="paletteButton" class="button-strong" type="button">Command <span class="kbd" id="modKey">⌘K</span></button>
+        <button id="density" type="button">Density</button>
+        <button id="theme" type="button">Theme</button>
+      </div>
     </header>
+
     <section class="grid">
       <article class="card metric"><div class="label">Runtime</div><div id="runtime" class="value">...</div><div id="runtimeNote" class="note"></div></article>
-      <article class="card metric"><div class="label">Jobs</div><div id="jobs" class="value">...</div><div class="note">matching filters</div></article>
-      <article class="card metric"><div class="label">Longest</div><div id="longest" class="value">...</div><div class="note">single job</div></article>
-      <article class="card metric"><div class="label">Failures</div><div id="failures" class="value">...</div><div class="note">failure or cancelled</div></article>
+      <article class="card metric metric-paid"><div class="label">macOS exposure</div><div id="macosRuntime" class="value">...</div><div id="macosNote" class="note"></div></article>
+      <article class="card metric metric-fast"><div class="label">Longest</div><div id="longest" class="value">...</div><div class="note">single job in view</div></article>
+      <article class="card metric metric-risk"><div class="label">Waste</div><div id="waste" class="value">...</div><div id="wasteNote" class="note"></div></article>
+
       <section class="card panel">
-        <div class="bar"><h2>Filters</h2><span class="note">Shortcuts: / search, t theme</span></div>
+        <div class="bar">
+          <h2>Filters</h2>
+          <div class="bar-group note"><span class="kbd">/</span> search <span class="kbd">j</span><span class="kbd">k</span> rows <span class="kbd">?</span> shortcuts</div>
+        </div>
         <div class="controls">
-          <input id="search" type="search" placeholder="Search repo, workflow, job, runner">
-          <select id="repo"></select>
-          <select id="runner"></select>
-          <select id="result"></select>
+          <label class="sr-only" for="search">Search jobs</label>
+          <input id="search" type="search" autocomplete="off" placeholder="Search repo, workflow, job, runner, result">
+          <select id="repo" aria-label="Repository filter"></select>
+          <select id="runner" aria-label="Runner filter"></select>
+          <select id="result" aria-label="Result filter"></select>
+          <div class="segmented" aria-label="Quick filters">
+            <button type="button" data-quick="all" class="active">All</button>
+            <button type="button" data-quick="macos">macOS</button>
+            <button type="button" data-quick="failures">Failures</button>
+            <button type="button" data-quick="paid">Paid risk</button>
+          </div>
         </div>
       </section>
+
       <section class="split">
         <article class="card">
-          <div class="bar"><h2>Flamegraph</h2><span class="note">repo / workflow / job / runner</span></div>
-          <div class="viz"><svg id="flamegraph" role="img" aria-label="Runtime flamegraph"></svg></div>
+          <div class="bar">
+            <h2 id="vizTitle">Flamegraph</h2>
+            <div class="segmented" aria-label="Visualization mode">
+              <button type="button" data-view="flame" class="active">Flame</button>
+              <button type="button" data-view="heat">Heat</button>
+            </div>
+          </div>
+          <div id="flamePanel" class="viz"><svg id="flamegraph" role="img" aria-label="Runtime flamegraph"></svg></div>
+          <div id="heatPanel" class="heatmap" hidden aria-label="Runtime by hour"></div>
         </article>
         <article class="card">
           <div class="bar"><h2>Histogram</h2><span class="note">job duration buckets</span></div>
           <div id="histogram" class="viz hist"></div>
         </article>
       </section>
+
       <section class="card panel">
-        <div class="bar"><h2>Slowest jobs</h2><span id="tableNote" class="note"></span></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Date</th><th>Repo</th><th>Workflow</th><th>Job</th><th>Runner</th><th>Result</th><th>Duration</th></tr></thead>
-            <tbody id="table"></tbody>
-          </table>
-        </div>
+        <div class="bar"><h2>Signals</h2><span class="note">where to cut spend first</span></div>
+        <div id="insights" class="insight-list"></div>
+      </section>
+
+      <section class="data-grid">
+        <article class="card">
+          <div class="bar"><h2>Slowest jobs</h2><span id="tableNote" class="note" aria-live="polite"></span></div>
+          <div class="table-wrap" id="tableWrap">
+            <table>
+              <thead><tr><th>Date</th><th>Repo</th><th>Workflow</th><th>Job</th><th>Runner</th><th>Result</th><th>Duration</th></tr></thead>
+              <tbody id="table"></tbody>
+            </table>
+          </div>
+        </article>
+        <aside class="card" aria-label="Selected job details">
+          <div class="bar"><h2>Inspector</h2><span class="note">Enter opens job</span></div>
+          <div id="inspector" class="inspector"></div>
+        </aside>
       </section>
     </section>
+
+    <div class="statusbar" role="status" aria-live="polite">
+      <span id="statusLeft">Loading...</span>
+      <span id="statusRight" class="mono"></span>
+    </div>
   </main>
+
+  <div id="paletteOverlay" class="overlay" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="palette">
+      <input id="paletteInput" type="search" autocomplete="off" placeholder="Type a command or repo name">
+      <div id="commandList" class="command-list"></div>
+    </div>
+  </div>
+
+  <div id="shortcutsOverlay" class="overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <div class="shortcuts">
+      <div class="bar" style="padding:0 0 14px;border-bottom:0;background:transparent"><h2>Shortcuts</h2><button id="closeShortcuts" type="button">Close</button></div>
+      <div class="shortcut-grid" id="shortcutGrid"></div>
+    </div>
+  </div>
+
   <script>
-    const state = { jobs: [], filtered: [], theme: localStorage.getItem("gh-actions-usage-theme") || "dark" };
+    const isMac = navigator.platform.toUpperCase().includes("MAC");
+    const modLabel = isMac ? "⌘K" : "Ctrl+K";
+    const state = {
+      jobs: [],
+      filtered: [],
+      rows: [],
+      selected: 0,
+      view: "flame",
+      quick: "all",
+      density: localStorage.getItem("gh-actions-usage-density") || "normal",
+      theme: localStorage.getItem("gh-actions-usage-theme") || "dark",
+      paletteOpen: false,
+      paletteIndex: 0,
+      abort: null,
+      summary: null
+    };
     const $ = (id) => document.getElementById(id);
     const els = {
-      subtitle: $("subtitle"), runtime: $("runtime"), runtimeNote: $("runtimeNote"), jobs: $("jobs"),
-      longest: $("longest"), failures: $("failures"), search: $("search"), repo: $("repo"),
-      runner: $("runner"), result: $("result"), flamegraph: $("flamegraph"), histogram: $("histogram"),
-      table: $("table"), tableNote: $("tableNote")
+      cacheState: $("cacheState"), subtitle: $("subtitle"), runtime: $("runtime"), runtimeNote: $("runtimeNote"),
+      macosRuntime: $("macosRuntime"), macosNote: $("macosNote"), longest: $("longest"), waste: $("waste"),
+      wasteNote: $("wasteNote"), search: $("search"), repo: $("repo"), runner: $("runner"), result: $("result"),
+      flamegraph: $("flamegraph"), flamePanel: $("flamePanel"), heatPanel: $("heatPanel"), histogram: $("histogram"),
+      insights: $("insights"), table: $("table"), tableWrap: $("tableWrap"), tableNote: $("tableNote"),
+      inspector: $("inspector"), statusLeft: $("statusLeft"), statusRight: $("statusRight"), paletteOverlay: $("paletteOverlay"),
+      paletteInput: $("paletteInput"), commandList: $("commandList"), shortcutsOverlay: $("shortcutsOverlay"),
+      shortcutGrid: $("shortcutGrid"), vizTitle: $("vizTitle")
     };
+    const shortcuts = [
+      [modLabel, "Open command palette"],
+      ["/", "Focus search"],
+      ["j / ↓", "Select next row"],
+      ["k / ↑", "Select previous row"],
+      ["Enter", "Open selected job"],
+      ["f", "Show failures"],
+      ["m", "Show macOS jobs"],
+      ["a", "Show all jobs"],
+      ["v", "Toggle flamegraph / heatmap"],
+      ["t", "Toggle theme"],
+      ["d", "Cycle density"],
+      ["?", "Show shortcuts"],
+      ["Esc", "Close overlay or clear focus"]
+    ];
+
     function setTheme(theme) {
       state.theme = theme;
       document.documentElement.classList.toggle("dark", theme === "dark");
       localStorage.setItem("gh-actions-usage-theme", theme);
+    }
+    function setDensity(density) {
+      state.density = density;
+      document.body.classList.toggle("compact", density === "compact");
+      document.body.classList.toggle("comfortable", density === "comfortable");
+      localStorage.setItem("gh-actions-usage-density", density);
+    }
+    function cycleDensity() {
+      const order = ["normal", "compact", "comfortable"];
+      setDensity(order[(order.indexOf(state.density) + 1) % order.length]);
+      renderStatus();
     }
     function duration(seconds) {
       seconds = Math.max(0, Math.round(seconds || 0));
@@ -181,31 +607,70 @@
       if (m) return `${m}m ${s}s`;
       return `${s}s`;
     }
-    function uniq(values) { return [...new Set(values.filter(Boolean))].sort(); }
+    function minutes(seconds) { return (seconds / 60).toFixed(1); }
+    function money(value) { return `$${value.toFixed(value >= 10 ? 0 : 2)}`; }
+    function uniq(values) { return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
     function optionize(select, label, values) {
+      const current = select.value;
       select.innerHTML = `<option value="">${label}</option>` + values.map(v => `<option>${escapeHtml(v)}</option>`).join("");
+      if (values.includes(current)) select.value = current;
     }
-    function text(job) { return [job.repo, job.workflow_path, job.workflow_name, job.name, job.runner?.image, job.runner?.os, job.conclusion].join(" ").toLowerCase(); }
+    function jobText(job) {
+      return [job.repo, job.workflow_path, job.workflow_name, job.name, job.runner?.image, job.runner?.os, job.runner?.type, job.conclusion]
+        .join(" ").toLowerCase();
+    }
+    function isFailure(job) { return ["failure", "cancelled", "timed_out"].includes(job.conclusion); }
+    function isMacOS(job) { return /macos|mac os/i.test(`${job.runner?.os || ""} ${job.runner?.image || ""}`); }
+    function isPaidRisk(job) { return job.cost_class === "paid" || job.cost_class === "enterprise" || isMacOS(job); }
+    function estimatedCost(job) {
+      const minutesUsed = (job.duration_seconds || 0) / 60;
+      if (isMacOS(job)) return minutesUsed * 0.08;
+      if (/windows/i.test(`${job.runner?.os || ""} ${job.runner?.image || ""}`)) return minutesUsed * 0.016;
+      return minutesUsed * 0.008;
+    }
     function apply() {
       const q = els.search.value.toLowerCase().trim();
-      state.filtered = state.jobs.filter(job => (!q || text(job).includes(q)) &&
-        (!els.repo.value || job.repo === els.repo.value) &&
-        (!els.runner.value || (job.runner?.os || "unknown") === els.runner.value) &&
-        (!els.result.value || job.conclusion === els.result.value));
+      state.filtered = state.jobs.filter(job => {
+        if (q && !jobText(job).includes(q)) return false;
+        if (els.repo.value && job.repo !== els.repo.value) return false;
+        if (els.runner.value && runnerLabel(job) !== els.runner.value) return false;
+        if (els.result.value && (job.conclusion || "unknown") !== els.result.value) return false;
+        if (state.quick === "macos" && !isMacOS(job)) return false;
+        if (state.quick === "failures" && !isFailure(job)) return false;
+        if (state.quick === "paid" && !isPaidRisk(job)) return false;
+        return true;
+      });
+      if (state.selected >= state.filtered.length) state.selected = Math.max(0, state.filtered.length - 1);
       render();
     }
     function render() {
-      const total = state.filtered.reduce((sum, job) => sum + (job.duration_seconds || 0), 0);
+      const total = sum(state.filtered, j => j.duration_seconds || 0);
+      const macos = sum(state.filtered.filter(isMacOS), j => j.duration_seconds || 0);
       const longest = Math.max(0, ...state.filtered.map(job => job.duration_seconds || 0));
-      const failures = state.filtered.filter(job => ["failure", "cancelled", "timed_out"].includes(job.conclusion)).length;
+      const waste = sum(state.filtered.filter(isFailure), j => j.duration_seconds || 0);
+      const estimated = sum(state.filtered, estimatedCost);
       els.runtime.textContent = duration(total);
-      els.runtimeNote.textContent = `${(total / 60).toFixed(1)} minutes`;
-      els.jobs.textContent = state.filtered.length.toLocaleString();
+      els.runtimeNote.textContent = `${minutes(total)} minutes in current view`;
+      els.macosRuntime.textContent = duration(macos);
+      els.macosNote.textContent = `${state.filtered.filter(isMacOS).length} macOS jobs, est. ${money(sum(state.filtered.filter(isMacOS), estimatedCost))}`;
       els.longest.textContent = duration(longest);
-      els.failures.textContent = state.filtered.length ? `${((failures / state.filtered.length) * 100).toFixed(1)}%` : "0%";
+      els.waste.textContent = duration(waste);
+      els.wasteNote.textContent = `${minutes(waste)} failed or cancelled minutes`;
+      els.cacheState.textContent = state.jobs.length ? "Local cache loaded" : "Waiting for cache";
+      els.subtitle.textContent = `${state.jobs.length.toLocaleString()} cached jobs, ${state.filtered.length.toLocaleString()} visible, est. ${money(estimated)} visible runner cost.`;
       renderFlamegraph();
+      renderHeatmap();
       renderHistogram();
+      renderInsights();
       renderTable();
+      renderInspector();
+      renderStatus();
+    }
+    function renderStatus() {
+      const selected = state.rows[state.selected];
+      const filterText = [els.repo.value || "all repos", els.runner.value || "all runners", els.result.value || "all results", state.quick].join(" / ");
+      els.statusLeft.textContent = `${state.filtered.length.toLocaleString()} visible of ${state.jobs.length.toLocaleString()} cached`;
+      els.statusRight.textContent = selected ? `${filterText} / selected ${state.selected + 1}` : filterText;
     }
     function tree() {
       const root = { name: "all", value: 0, children: new Map(), depth: 0 };
@@ -213,7 +678,7 @@
         const seconds = Math.max(0, job.duration_seconds || 0);
         root.value += seconds;
         let node = root;
-        for (const name of [job.repo, job.workflow_path || job.workflow_name, job.name, job.runner?.image || job.runner?.os || "unknown"]) {
+        for (const name of [job.repo, job.workflow_path || job.workflow_name, job.name, runnerLabel(job)]) {
           const key = name || "unknown";
           if (!node.children.has(key)) node.children.set(key, { name: key, value: 0, children: new Map(), depth: node.depth + 1 });
           node = node.children.get(key);
@@ -227,7 +692,7 @@
         if (child.value <= 0) continue;
         const w = width * child.value / node.value;
         rows.push({ node: child, x, y, width: w, height: 32 });
-        layout(child, x, y + 36, w, rows);
+        if (w > 18) layout(child, x, y + 36, w, rows);
         x += w;
       }
     }
@@ -237,45 +702,278 @@
       const height = Math.max(70, rows.reduce((m, r) => Math.max(m, r.y + r.height), 0) + 6);
       els.flamegraph.setAttribute("viewBox", `0 0 ${width} ${height}`);
       els.flamegraph.innerHTML = rows.length ? rows.map(r => {
-        const label = r.width > 80 ? `${r.node.name} ${duration(r.node.value)}` : "";
-        return `<g><rect x="${r.x.toFixed(2)}" y="${r.y}" width="${Math.max(0, r.width - 1).toFixed(2)}" height="${r.height}" rx="7" fill="${color(r.node.name, r.node.depth)}"></rect><text class="flame-label" x="${(r.x + 8).toFixed(2)}" y="${r.y + 21}">${escapeHtml(label)}</text></g>`;
-      }).join("") : `<text x="24" y="42" fill="currentColor">No cached job data yet. Run ingest first.</text>`;
+        const label = r.width > 84 ? `${r.node.name} ${duration(r.node.value)}` : "";
+        return `<g><title>${escapeHtml(r.node.name)} - ${duration(r.node.value)}</title><rect x="${r.x.toFixed(2)}" y="${r.y}" width="${Math.max(0, r.width - 1).toFixed(2)}" height="${r.height}" rx="8" fill="${entityColor(r.node.name, r.node.depth)}"></rect><text class="flame-label" x="${(r.x + 8).toFixed(2)}" y="${r.y + 21}">${escapeHtml(label)}</text></g>`;
+      }).join("") : `<text x="24" y="42" fill="currentColor">No cached job data yet. Run report or import first.</text>`;
+    }
+    function renderHeatmap() {
+      const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, seconds: 0, jobs: 0 }));
+      for (const job of state.filtered) {
+        const started = new Date(job.started_at || job.completed_at || "");
+        if (Number.isNaN(started.getTime())) continue;
+        const bucket = buckets[started.getHours()];
+        bucket.seconds += job.duration_seconds || 0;
+        bucket.jobs += 1;
+      }
+      const max = Math.max(1, ...buckets.map(b => b.seconds));
+      els.heatPanel.innerHTML = buckets.map(b => {
+        const heat = Math.max(4, Math.round((b.seconds / max) * 88));
+        return `<div class="heat-cell" style="--heat:${heat}" title="${b.hour}:00 - ${duration(b.seconds)}, ${b.jobs} jobs"><span>${String(b.hour).padStart(2, "0")}</span></div>`;
+      }).join("");
     }
     function renderHistogram() {
-      const buckets = [["<30s",0,30],["30s-1m",30,60],["1m-2m",60,120],["2m-5m",120,300],["5m-10m",300,600],["10m-20m",600,1200],["20m+",1200,Infinity]].map(([label,min,max]) => ({ label, min, max, count: 0 }));
-      for (const job of state.filtered) buckets.find(b => (job.duration_seconds || 0) >= b.min && (job.duration_seconds || 0) < b.max).count++;
+      const buckets = [["<30s", 0, 30], ["30s-1m", 30, 60], ["1m-2m", 60, 120], ["2m-5m", 120, 300], ["5m-10m", 300, 600], ["10m-20m", 600, 1200], ["20m+", 1200, Infinity]]
+        .map(([label, min, max]) => ({ label, min, max, count: 0, seconds: 0 }));
+      for (const job of state.filtered) {
+        const seconds = job.duration_seconds || 0;
+        const bucket = buckets.find(b => seconds >= b.min && seconds < b.max);
+        bucket.count++;
+        bucket.seconds += seconds;
+      }
       const max = Math.max(1, ...buckets.map(b => b.count));
-      els.histogram.innerHTML = buckets.map(b => `<div class="bucket"><span class="mono">${b.label}</span><div class="track"><div class="fill" style="width:${Math.max(2, b.count / max * 100)}%"></div></div><span class="mono">${b.count}</span></div>`).join("");
+      els.histogram.innerHTML = buckets.map(b => `<div class="bucket"><span class="mono">${b.label}</span><div class="track"><div class="fill" style="width:${Math.max(2, b.count / max * 100)}%"></div></div><span class="mono">${b.count} / ${duration(b.seconds)}</span></div>`).join("");
+    }
+    function renderInsights() {
+      const byRunner = groupSum(state.filtered, runnerLabel);
+      const byRepo = groupSum(state.filtered, job => job.repo || "unknown");
+      const macJobs = state.filtered.filter(isMacOS);
+      const failed = state.filtered.filter(isFailure);
+      const topRunner = topEntry(byRunner);
+      const topRepo = topEntry(byRepo);
+      const macCost = sum(macJobs, estimatedCost);
+      const failureCost = sum(failed, estimatedCost);
+      const cards = [
+        ["$", `${money(macCost)} macOS exposure`, `${duration(sum(macJobs, j => j.duration_seconds || 0))} on hosted macOS runners`],
+        ["!", `${money(failureCost)} failure waste`, `${failed.length} failed or cancelled jobs in view`],
+        ["R", topRunner ? `${topRunner[0]} dominates` : "No runner signal", topRunner ? `${duration(topRunner[1])} on this runner` : "Import or refresh data to populate this"],
+        ["P", topRepo ? `${topRepo[0]} is hottest` : "No repo signal", topRepo ? `${duration(topRepo[1])} in this repository` : "Use filters to narrow the view"]
+      ];
+      els.insights.innerHTML = cards.map(([icon, title, body]) => `<div class="insight"><div class="insight-icon">${escapeHtml(icon)}</div><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(body)}</small></div><span class="pill">${state.quick}</span></div>`).join("");
     }
     function renderTable() {
-      const rows = [...state.filtered].sort((a, b) => (b.duration_seconds || 0) - (a.duration_seconds || 0)).slice(0, 200);
-      els.tableNote.textContent = `${rows.length} shown of ${state.filtered.length}`;
-      els.table.innerHTML = rows.length ? rows.map(job => `<tr><td class="mono">${(job.started_at || "").slice(0,10)}</td><td>${escapeHtml(job.repo)}</td><td>${escapeHtml(job.workflow_path || job.workflow_name || "unknown")}</td><td>${escapeHtml(job.name)}</td><td><span class="pill">${escapeHtml(job.runner?.image || job.runner?.os || "unknown")}</span></td><td><span class="pill ${escapeHtml(job.conclusion)}">${escapeHtml(job.conclusion)}</span></td><td class="mono">${duration(job.duration_seconds)}</td></tr>`).join("") : `<tr><td class="empty" colspan="7">No jobs match.</td></tr>`;
+      state.rows = [...state.filtered].sort((a, b) => (b.duration_seconds || 0) - (a.duration_seconds || 0)).slice(0, 500);
+      if (state.selected >= state.rows.length) state.selected = Math.max(0, state.rows.length - 1);
+      els.tableNote.textContent = `${state.rows.length.toLocaleString()} shown of ${state.filtered.length.toLocaleString()}`;
+      els.table.innerHTML = state.rows.length ? state.rows.map((job, index) => `<tr data-index="${index}" class="${index === state.selected ? "selected" : ""}" tabindex="-1"><td class="mono">${escapeHtml((job.started_at || "").slice(0, 10))}</td><td>${escapeHtml(job.repo)}</td><td>${escapeHtml(job.workflow_path || job.workflow_name || "unknown")}</td><td>${escapeHtml(job.name)}</td><td><span class="pill">${escapeHtml(runnerLabel(job))}</span></td><td><span class="pill ${escapeHtml(job.conclusion)}"><span class="pill-dot"></span>${escapeHtml(job.conclusion || "unknown")}</span></td><td class="mono">${duration(job.duration_seconds)}</td></tr>`).join("") : `<tr><td class="empty" colspan="7">No jobs match.</td></tr>`;
     }
-    function color(text, depth) {
-      let hash = depth * 29;
-      for (const ch of text) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0;
-      return `hsl(${Math.abs(hash) % 360} 58% ${state.theme === "dark" ? 42 : 38}%)`;
+    function renderInspector() {
+      const job = state.rows[state.selected];
+      if (!job) {
+        els.inspector.innerHTML = `<p class="note">Select a job to inspect runner image, cost class, URL, and duration.</p>`;
+        return;
+      }
+      els.inspector.innerHTML = `<h3 class="inspector-title">${escapeHtml(job.name || "unnamed job")}</h3>
+        <span class="pill ${escapeHtml(job.conclusion)}"><span class="pill-dot"></span>${escapeHtml(job.conclusion || "unknown")}</span>
+        <dl class="definition">
+          <dt>Repo</dt><dd>${escapeHtml(job.repo)}</dd>
+          <dt>Workflow</dt><dd>${escapeHtml(job.workflow_path || job.workflow_name || "unknown")}</dd>
+          <dt>Runner</dt><dd>${escapeHtml(runnerLabel(job))}</dd>
+          <dt>OS / Arch</dt><dd>${escapeHtml(job.runner?.os || "unknown")} / ${escapeHtml(job.runner?.arch || "unknown")}</dd>
+          <dt>Cost class</dt><dd>${escapeHtml(job.cost_class || (isMacOS(job) ? "paid-risk" : "unknown"))}</dd>
+          <dt>Duration</dt><dd>${duration(job.duration_seconds)} (${minutes(job.duration_seconds || 0)} minutes)</dd>
+          <dt>Estimate</dt><dd>${money(estimatedCost(job))}</dd>
+          <dt>Started</dt><dd>${escapeHtml(job.started_at || "unknown")}</dd>
+        </dl>
+        ${job.html_url ? `<a class="pill" href="${escapeHtml(job.html_url)}" target="_blank" rel="noreferrer">Open job in GitHub</a>` : ""}`;
     }
-    function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch])); }
-    async function load() {
-      setTheme(state.theme);
-      const summary = await fetch("/api/summary").then(r => r.json());
-      state.jobs = await fetch("/api/jobs?limit=20000").then(r => r.json());
-      els.subtitle.textContent = `${summary.total_jobs.toLocaleString()} cached jobs, ${summary.total_minutes.toFixed(1)} minutes.`;
-      optionize(els.repo, "All repos", uniq(state.jobs.map(j => j.repo)));
-      optionize(els.runner, "All runners", uniq(state.jobs.map(j => j.runner?.os || "unknown")));
-      optionize(els.result, "All results", uniq(state.jobs.map(j => j.conclusion || "unknown")));
+    function commands() {
+      const repoCommands = uniq(state.jobs.map(j => j.repo)).map(repo => ({ label: `Filter repo: ${repo}`, hint: "repo", run: () => { els.repo.value = repo; closePalette(); apply(); } }));
+      return [
+        { label: "Focus search", hint: "/", run: () => { closePalette(); els.search.focus(); } },
+        { label: "Clear filters", hint: "a", run: clearFilters },
+        { label: "Show failures", hint: "f", run: () => setQuick("failures") },
+        { label: "Show macOS jobs", hint: "m", run: () => setQuick("macos") },
+        { label: "Show paid risk", hint: "paid", run: () => setQuick("paid") },
+        { label: "Toggle flame / heat", hint: "v", run: toggleView },
+        { label: "Toggle theme", hint: "t", run: () => { setTheme(state.theme === "dark" ? "light" : "dark"); closePalette(); render(); } },
+        { label: "Cycle density", hint: "d", run: () => { cycleDensity(); closePalette(); } },
+        { label: "Download visible jobs JSON", hint: "json", run: downloadVisible },
+        ...repoCommands
+      ];
+    }
+    function openPalette() {
+      state.paletteOpen = true;
+      state.paletteIndex = 0;
+      els.paletteOverlay.classList.add("open");
+      els.paletteInput.value = "";
+      renderCommands();
+      requestAnimationFrame(() => els.paletteInput.focus());
+    }
+    function closePalette() {
+      state.paletteOpen = false;
+      els.paletteOverlay.classList.remove("open");
+    }
+    function renderCommands() {
+      const q = els.paletteInput.value.toLowerCase().trim();
+      const list = commands().filter(cmd => !q || cmd.label.toLowerCase().includes(q) || cmd.hint.toLowerCase().includes(q)).slice(0, 30);
+      if (state.paletteIndex >= list.length) state.paletteIndex = Math.max(0, list.length - 1);
+      els.commandList.innerHTML = list.length ? list.map((cmd, index) => `<button type="button" class="command ${index === state.paletteIndex ? "active" : ""}" data-command="${index}"><span>${escapeHtml(cmd.label)}</span><span class="kbd">${escapeHtml(cmd.hint)}</span></button>`).join("") : `<div class="empty">No commands match.</div>`;
+      els.commandList.querySelectorAll("[data-command]").forEach(button => {
+        button.addEventListener("click", () => list[Number(button.dataset.command)].run());
+      });
+      els.commandList._commands = list;
+    }
+    function runSelectedCommand() {
+      const list = els.commandList._commands || [];
+      const cmd = list[state.paletteIndex];
+      if (cmd) cmd.run();
+    }
+    function openShortcuts() {
+      els.shortcutGrid.innerHTML = shortcuts.map(([key, action]) => `<span class="kbd">${escapeHtml(key)}</span><span>${escapeHtml(action)}</span>`).join("");
+      els.shortcutsOverlay.classList.add("open");
+    }
+    function closeShortcuts() { els.shortcutsOverlay.classList.remove("open"); }
+    function setQuick(value) {
+      state.quick = value;
+      document.querySelectorAll("[data-quick]").forEach(button => button.classList.toggle("active", button.dataset.quick === value));
+      closePalette();
       apply();
     }
-    $("theme").addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
+    function clearFilters() {
+      els.search.value = "";
+      els.repo.value = "";
+      els.runner.value = "";
+      els.result.value = "";
+      setQuick("all");
+      closePalette();
+      apply();
+    }
+    function setView(view) {
+      state.view = view;
+      document.querySelectorAll("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === state.view));
+      els.flamePanel.hidden = state.view !== "flame";
+      els.heatPanel.hidden = state.view !== "heat";
+      els.vizTitle.textContent = state.view === "flame" ? "Flamegraph" : "Hourly heatmap";
+    }
+    function toggleView() {
+      setView(state.view === "flame" ? "heat" : "flame");
+      closePalette();
+    }
+    function navigate(delta) {
+      if (!state.rows.length) return;
+      state.selected = Math.max(0, Math.min(state.rows.length - 1, state.selected + delta));
+      renderTable();
+      renderInspector();
+      renderStatus();
+      const row = els.table.querySelector(`tr[data-index="${state.selected}"]`);
+      if (row) row.scrollIntoView({ block: "nearest" });
+    }
+    function openSelectedJob() {
+      const job = state.rows[state.selected];
+      if (job?.html_url) window.open(job.html_url, "_blank", "noreferrer");
+    }
+    function downloadVisible() {
+      const blob = new Blob([JSON.stringify(state.filtered, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "gh-actions-usage-visible-jobs.json";
+      link.click();
+      URL.revokeObjectURL(url);
+      closePalette();
+    }
+    function runnerLabel(job) { return job.runner?.image || job.runner?.os || job.runner_name || "unknown"; }
+    function groupSum(items, keyFn) {
+      const map = new Map();
+      for (const item of items) {
+        const key = keyFn(item);
+        map.set(key, (map.get(key) || 0) + (item.duration_seconds || 0));
+      }
+      return map;
+    }
+    function topEntry(map) { return [...map.entries()].sort((a, b) => b[1] - a[1])[0]; }
+    function sum(items, fn) { return items.reduce((total, item) => total + fn(item), 0); }
+    function entityColor(text, depth) {
+      let hash = depth * 29;
+      for (const ch of text) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0;
+      const hues = [176, 26, 211, 151, 219, 38, 194, 343, 121, 260, 14, 205];
+      const hue = hues[Math.abs(hash) % hues.length];
+      return `hsl(${hue} 58% ${state.theme === "dark" ? 42 : 38}%)`;
+    }
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+    async function fetchJSON(path, signal) {
+      const response = await fetch(path, { signal, headers: { "Accept": "application/json" } });
+      if (!response.ok) throw new Error(`${path}: ${response.status}`);
+      return response.json();
+    }
+    async function load() {
+      setTheme(state.theme);
+      setDensity(state.density);
+      $("modKey").textContent = modLabel;
+      if (state.abort) state.abort.abort();
+      state.abort = new AbortController();
+      const started = performance.now();
+      const [summary, jobs] = await Promise.all([
+        fetchJSON("/api/summary", state.abort.signal),
+        fetchJSON("/api/jobs?limit=20000", state.abort.signal)
+      ]);
+      state.summary = summary;
+      state.jobs = jobs;
+      optionize(els.repo, "All repos", uniq(jobs.map(j => j.repo)));
+      optionize(els.runner, "All runners", uniq(jobs.map(runnerLabel)));
+      optionize(els.result, "All results", uniq(jobs.map(j => j.conclusion || "unknown")));
+      els.statusRight.textContent = `loaded in ${Math.round(performance.now() - started)}ms`;
+      apply();
+    }
+    $("theme").addEventListener("click", () => { setTheme(state.theme === "dark" ? "light" : "dark"); render(); });
+    $("density").addEventListener("click", cycleDensity);
+    $("paletteButton").addEventListener("click", openPalette);
+    $("closeShortcuts").addEventListener("click", closeShortcuts);
     [els.search, els.repo, els.runner, els.result].forEach(el => el.addEventListener("input", apply));
-    document.addEventListener("keydown", e => {
-      const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
-      if (e.key === "/" && !typing) { e.preventDefault(); els.search.focus(); }
-      if (e.key === "t" && !typing) setTheme(state.theme === "dark" ? "light" : "dark");
+    document.querySelectorAll("[data-quick]").forEach(button => button.addEventListener("click", () => setQuick(button.dataset.quick)));
+    document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
+    els.table.addEventListener("click", event => {
+      const row = event.target.closest("tr[data-index]");
+      if (!row) return;
+      state.selected = Number(row.dataset.index);
+      renderTable();
+      renderInspector();
+      renderStatus();
     });
-    load().catch(err => { els.subtitle.textContent = err.message || String(err); });
+    els.table.addEventListener("dblclick", openSelectedJob);
+    els.paletteInput.addEventListener("input", () => { state.paletteIndex = 0; renderCommands(); });
+    els.paletteInput.addEventListener("keydown", event => {
+      const list = els.commandList._commands || [];
+      if (event.key === "ArrowDown") { event.preventDefault(); state.paletteIndex = Math.min(list.length - 1, state.paletteIndex + 1); renderCommands(); }
+      if (event.key === "ArrowUp") { event.preventDefault(); state.paletteIndex = Math.max(0, state.paletteIndex - 1); renderCommands(); }
+      if (event.key === "Enter") { event.preventDefault(); runSelectedCommand(); }
+    });
+    [els.paletteOverlay, els.shortcutsOverlay].forEach(overlay => overlay.addEventListener("click", event => {
+      if (event.target !== overlay) return;
+      if (overlay === els.paletteOverlay) closePalette();
+      if (overlay === els.shortcutsOverlay) closeShortcuts();
+    }));
+    document.addEventListener("keydown", event => {
+      const meta = event.metaKey || event.ctrlKey;
+      const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+      if (meta && event.key.toLowerCase() === "k") { event.preventDefault(); openPalette(); return; }
+      if (event.key === "Escape") {
+        if (els.paletteOverlay.classList.contains("open")) { closePalette(); return; }
+        if (els.shortcutsOverlay.classList.contains("open")) { closeShortcuts(); return; }
+        if (typing) document.activeElement.blur();
+        return;
+      }
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "/") { event.preventDefault(); els.search.focus(); return; }
+      if (event.key === "?") { event.preventDefault(); openShortcuts(); return; }
+      if (event.key === "j" || event.key === "ArrowDown") { event.preventDefault(); navigate(1); return; }
+      if (event.key === "k" || event.key === "ArrowUp") { event.preventDefault(); navigate(-1); return; }
+      if (event.key === "Enter") { event.preventDefault(); openSelectedJob(); return; }
+      if (event.key === "f") { event.preventDefault(); setQuick("failures"); return; }
+      if (event.key === "m") { event.preventDefault(); setQuick("macos"); return; }
+      if (event.key === "a") { event.preventDefault(); clearFilters(); return; }
+      if (event.key === "t") { event.preventDefault(); setTheme(state.theme === "dark" ? "light" : "dark"); render(); return; }
+      if (event.key === "d") { event.preventDefault(); cycleDensity(); return; }
+      if (event.key === "v") { event.preventDefault(); toggleView(); }
+    });
+    load().catch(err => {
+      if (err.name === "AbortError") return;
+      els.cacheState.textContent = "Cache read failed";
+      els.subtitle.textContent = err.message || String(err);
+      els.statusLeft.textContent = "Dashboard failed to load";
+    });
   </script>
 </body>
 </html>
