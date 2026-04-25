@@ -552,10 +552,8 @@
       quick: "all",
       density: localStorage.getItem("gh-actions-usage-density") || "normal",
       theme: localStorage.getItem("gh-actions-usage-theme") || "dark",
-      paletteOpen: false,
       paletteIndex: 0,
-      abort: null,
-      summary: null
+      abort: null
     };
     const $ = (id) => document.getElementById(id);
     const els = {
@@ -645,14 +643,16 @@
     }
     function render() {
       const total = sum(state.filtered, j => j.duration_seconds || 0);
-      const macos = sum(state.filtered.filter(isMacOS), j => j.duration_seconds || 0);
+      const macJobs = state.filtered.filter(isMacOS);
+      const failedJobs = state.filtered.filter(isFailure);
+      const macos = sum(macJobs, j => j.duration_seconds || 0);
       const longest = Math.max(0, ...state.filtered.map(job => job.duration_seconds || 0));
-      const waste = sum(state.filtered.filter(isFailure), j => j.duration_seconds || 0);
+      const waste = sum(failedJobs, j => j.duration_seconds || 0);
       const estimated = sum(state.filtered, estimatedCost);
       els.runtime.textContent = duration(total);
       els.runtimeNote.textContent = `${minutes(total)} minutes in current view`;
       els.macosRuntime.textContent = duration(macos);
-      els.macosNote.textContent = `${state.filtered.filter(isMacOS).length} macOS jobs, est. ${money(sum(state.filtered.filter(isMacOS), estimatedCost))}`;
+      els.macosNote.textContent = `${macJobs.length} macOS jobs, est. ${money(sum(macJobs, estimatedCost))}`;
       els.longest.textContent = duration(longest);
       els.waste.textContent = duration(waste);
       els.wasteNote.textContent = `${minutes(waste)} failed or cancelled minutes`;
@@ -792,7 +792,6 @@
       ];
     }
     function openPalette() {
-      state.paletteOpen = true;
       state.paletteIndex = 0;
       els.paletteOverlay.classList.add("open");
       els.paletteInput.value = "";
@@ -800,7 +799,6 @@
       requestAnimationFrame(() => els.paletteInput.focus());
     }
     function closePalette() {
-      state.paletteOpen = false;
       els.paletteOverlay.classList.remove("open");
     }
     function renderCommands() {
@@ -835,8 +833,6 @@
       els.runner.value = "";
       els.result.value = "";
       setQuick("all");
-      closePalette();
-      apply();
     }
     function setView(view) {
       state.view = view;
@@ -905,11 +901,10 @@
       if (state.abort) state.abort.abort();
       state.abort = new AbortController();
       const started = performance.now();
-      const [summary, jobs] = await Promise.all([
+      const [, jobs] = await Promise.all([
         fetchJSON("/api/summary", state.abort.signal),
         fetchJSON("/api/jobs?limit=20000", state.abort.signal)
       ]);
-      state.summary = summary;
       state.jobs = jobs;
       optionize(els.repo, "All repos", uniq(jobs.map(j => j.repo)));
       optionize(els.runner, "All runners", uniq(jobs.map(runnerLabel)));
