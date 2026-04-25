@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1172,13 +1171,44 @@ func TestBillingDimensionVariants(t *testing.T) {
 	}
 }
 
-func TestWhereBuilders(t *testing.T) {
-	where, args := filtersWhere(QueryFilters{Repo: "octo/app", Since: "2026-04-01", Until: "2026-04-30"}, "started_at")
-	if where != "repo = ? and started_at >= ? and started_at <= ?" {
-		t.Fatalf("filtersWhere = %q", where)
+func TestSqlcBackedFilters(t *testing.T) {
+	cache := openTestCache(t)
+	defer cache.Close()
+
+	jobs := []JobRecord{
+		{ID: 1, RunID: 1, Repo: "octo/app", Name: "kept", StartedAt: "2026-04-15T10:00:00Z", DurationSecs: 60},
+		{ID: 2, RunID: 2, Repo: "octo/app", Name: "outside date", StartedAt: "2026-05-01T10:00:00Z", DurationSecs: 120},
+		{ID: 3, RunID: 3, Repo: "other/app", Name: "outside repo", StartedAt: "2026-04-20T10:00:00Z", DurationSecs: 180},
 	}
-	if !reflect.DeepEqual(args, []any{"octo/app", "2026-04-01", "2026-04-30T23:59:59Z"}) {
-		t.Fatalf("filtersWhere args = %#v", args)
+	for _, job := range jobs {
+		if err := cache.UpsertJob(job); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filteredJobs, err := cache.ListJobs(QueryFilters{Repo: "octo/app", Since: "2026-04-01", Until: "2026-04-30"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filteredJobs) != 1 || filteredJobs[0].ID != 1 {
+		t.Fatalf("filtered jobs = %#v", filteredJobs)
+	}
+
+	runs := []RunRecord{
+		{ID: 1, Repo: "octo/app", WorkflowName: "kept", RunStartedAt: "2026-04-15T10:00:00Z"},
+		{ID: 2, Repo: "octo/app", WorkflowName: "outside date", RunStartedAt: "2026-05-01T10:00:00Z"},
+		{ID: 3, Repo: "other/app", WorkflowName: "outside repo", RunStartedAt: "2026-04-20T10:00:00Z"},
+	}
+	for _, run := range runs {
+		if err := cache.UpsertRun(run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filteredRuns, err := cache.ListRuns(QueryFilters{Repo: "octo/app", Since: "2026-04-01", Until: "2026-04-30"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filteredRuns) != 1 || filteredRuns[0].ID != 1 {
+		t.Fatalf("filtered runs = %#v", filteredRuns)
 	}
 
 	billingFilters := BillingQueryFilters{
@@ -1194,14 +1224,22 @@ func TestWhereBuilders(t *testing.T) {
 		Organization: "demo-org",
 		CostCenterID: "cc-1",
 	}
-	where, args = billingFiltersWhere(billingFilters)
-	wantWhere := "account = ? and repository_name = ? and date >= ? and date <= ? and year = ? and month = ? and day = ? and product = ? and sku = ? and organization_name = ? and cost_center_id = ?"
-	if where != wantWhere {
-		t.Fatalf("billingFiltersWhere = %q", where)
+	records := []BillingUsageRecord{
+		{Key: "kept", Account: "octo", AccountKind: "user", Date: "2026-04-24", Year: 2026, Month: 4, Day: 24, Product: "Actions", SKU: "actions_macos", OrganizationName: "demo-org", RepositoryName: "octo/app", CostCenterID: "cc-1", NetAmount: 10},
+		{Key: "outside-account", Account: "other", AccountKind: "user", Date: "2026-04-24", Year: 2026, Month: 4, Day: 24, Product: "Actions", SKU: "actions_macos", OrganizationName: "demo-org", RepositoryName: "octo/app", CostCenterID: "cc-1", NetAmount: 20},
+		{Key: "outside-repo", Account: "octo", AccountKind: "user", Date: "2026-04-24", Year: 2026, Month: 4, Day: 24, Product: "Actions", SKU: "actions_macos", OrganizationName: "demo-org", RepositoryName: "other/app", CostCenterID: "cc-1", NetAmount: 30},
 	}
-	wantArgs := []any{"octo", "octo/app", "2026-04-01", "2026-04-30", 2026, 4, 24, "Actions", "actions_macos", "demo-org", "cc-1"}
-	if !reflect.DeepEqual(args, wantArgs) {
-		t.Fatalf("billingFiltersWhere args = %#v", args)
+	for _, record := range records {
+		if err := cache.UpsertBillingUsage(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filteredBilling, err := cache.ListBillingUsage(billingFilters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filteredBilling) != 1 || filteredBilling[0].Key != "kept" {
+		t.Fatalf("filtered billing = %#v", filteredBilling)
 	}
 }
 

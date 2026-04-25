@@ -1,39 +1,35 @@
-# sqlc Evaluation
+# sqlc Adoption
 
-Status: defer adoption for now.
+Status: adopted.
 
 ## Context
 
-The cache layer currently has one schema initializer, three upserts, three list
-queries, stats, and clear. Tests cover idempotent writes, fixture import/export,
-summary reads, and the HTTP handler.
-
-`sqlc` is still a good fit for this repo later. It lets us write SQL once,
-generate type-safe Go, and catch query/schema drift at generation time. Current
-sqlc docs also support SQLite generation with `engine: "sqlite"`.
+The cache layer has stable SQLite upserts, filtered list queries, stats, and
+clear operations. `sqlc` lets us keep SQL as the source of truth, generate
+type-safe Go adapters, and catch query/schema drift during local checks.
 
 ## Decision
 
-Do not introduce sqlc in this patch. The storage layer is small, and the two
-highest-value read paths build optional filters dynamically. A sqlc migration
-would add generated code and adapters while some query composition would stay in
-handwritten Go.
+Use `sqlc` for cache schema-aware queries:
 
-Revisit this when one of these becomes true:
+- `internal/db/schema.sql` owns the SQLite schema used for code generation.
+- `internal/db/query.sql` owns upserts, filtered list queries, stats, and clear.
+- Generated Go code lives beside those SQL files in `internal/db`.
+- `Cache` remains the public adapter so CLI code does not depend on generated
+  row types.
 
-- We add migrations or versioned schema changes.
-- We add more aggregate queries for billing or runner analysis.
-- Query shape churn starts causing scan/order bugs.
-- Multiple contributors are editing the cache layer at the same time.
+## Workflow
 
-## Migration Shape
+Regenerate after editing `schema.sql` or `query.sql`:
 
-When we adopt sqlc, do it as one storage-focused change:
+```bash
+make sqlc
+```
 
-1. Move the current DDL into `internal/db/schema.sql`.
-2. Move stable upsert/list/stats/clear queries into `internal/db/query.sql`.
-3. Add `sqlc.yaml` with `engine: "sqlite"` and Go output under `internal/db`.
-4. Generate code with `sqlc generate`.
-5. Keep `Cache` as the public adapter that converts generated rows to the CLI's
-   `Repo`, `RunRecord`, and `JobRecord` types.
-6. Add a `make sqlc` or `make generate` check so generated code cannot drift.
+Verify generated code without mutating the working tree:
+
+```bash
+make sqlc-check
+```
+
+`make check` runs `sqlc-check`, so generated code drift fails CI-style checks.

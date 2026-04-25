@@ -59,13 +59,15 @@ uvx showboat verify docs/showboat-demo.md
 
 ## Storage
 
-- The current storage code uses `database/sql` directly against SQLite.
+- The cache schema and stable queries live in `internal/db/*.sql` and generate
+  typed Go with `sqlc`.
+- Run `make sqlc` after editing `internal/db/schema.sql` or
+  `internal/db/query.sql`; `make check` runs the non-mutating `make sqlc-check`.
+- Keep `Cache` as the public adapter around generated `internal/db` row types.
 - When adding fields to exported or cached structs, add an export/import
   round-trip test. This matters most for types with custom `UnmarshalJSON`.
 - Multi-row cache writes should use transactions when partial state would be
   misleading.
-- Consider `sqlc` if the schema grows or query churn increases. See
-  `docs/sqlc-evaluation.md` before adding generated database code.
 
 ## Release
 

@@ -23,6 +23,7 @@ import (
 
 	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/cli/go-gh/v2/pkg/browser"
+	store "github.com/prateek/gh-actions-usage/internal/db"
 	_ "modernc.org/sqlite"
 )
 
@@ -2207,8 +2208,9 @@ func formatDuration(seconds float64) string {
 }
 
 type Cache struct {
-	path string
-	db   *sql.DB
+	path    string
+	db      *sql.DB
+	queries *store.Queries
 }
 
 func OpenCache(path string) (*Cache, error) {
@@ -2219,7 +2221,7 @@ func OpenCache(path string) (*Cache, error) {
 	if err != nil {
 		return nil, err
 	}
-	cache := &Cache{path: path, db: db}
+	cache := &Cache{path: path, db: db, queries: store.New(db)}
 	if err := cache.init(); err != nil {
 		db.Close()
 		return nil, err
@@ -2234,105 +2236,7 @@ func (c *Cache) init() error {
 	statements := []string{
 		`pragma journal_mode = wal`,
 		`pragma busy_timeout = 5000`,
-		`create table if not exists repos (
-			full_name text primary key,
-			id integer,
-			account text,
-			owner text,
-			owner_kind text,
-			name text,
-			private integer,
-			billing_owner text,
-			billing_owner_kind text,
-			billing_plan text,
-			raw_json text,
-			updated_at text default current_timestamp
-		)`,
-		`create table if not exists runs (
-			id integer primary key,
-			account text,
-			repo text,
-			repo_owner text,
-			repo_owner_kind text,
-			billing_owner text,
-			billing_owner_kind text,
-			billing_plan text,
-			workflow_id integer,
-			workflow_name text,
-			workflow_path text,
-			run_number integer,
-			run_attempt integer,
-			event text,
-			branch text,
-			actor text,
-			status text,
-			conclusion text,
-			created_at text,
-			run_started_at text,
-			html_url text,
-			raw_json text,
-			updated_at text default current_timestamp
-		)`,
-		`create table if not exists jobs (
-			id integer primary key,
-			run_id integer,
-			account text,
-			repo text,
-			repo_owner text,
-			repo_owner_kind text,
-			billing_owner text,
-			billing_owner_kind text,
-			billing_plan text,
-			cost_class text,
-			workflow_name text,
-			workflow_path text,
-			name text,
-			status text,
-			conclusion text,
-			started_at text,
-			completed_at text,
-			duration_seconds real,
-			runner_name text,
-			runner_group text,
-			runner_type text,
-			runner_os text,
-			runner_arch text,
-			runner_image text,
-			labels_json text,
-			html_url text,
-			raw_json text,
-			updated_at text default current_timestamp
-		)`,
-		`create table if not exists billing_usage (
-			key text primary key,
-			account text,
-			account_kind text,
-			date text,
-			year integer,
-			month integer,
-			day integer,
-			product text,
-			sku text,
-			unit_type text,
-			model text,
-			organization_name text,
-			repository_name text,
-			cost_center_id text,
-			cost_class text,
-			quantity real,
-			gross_quantity real,
-			discount_quantity real,
-			net_quantity real,
-			price_per_unit real,
-			gross_amount real,
-			discount_amount real,
-			net_amount real,
-			raw_json text,
-			updated_at text default current_timestamp
-		)`,
-		`create index if not exists idx_jobs_repo_started on jobs(repo, started_at)`,
-		`create index if not exists idx_runs_repo_started on runs(repo, run_started_at)`,
-		`create index if not exists idx_billing_usage_account_date on billing_usage(account, date)`,
+		store.SchemaSQL,
 	}
 	for _, stmt := range statements {
 		if _, err := c.db.Exec(stmt); err != nil {
@@ -2374,239 +2278,356 @@ func (c *Cache) ensureColumns() error {
 	return nil
 }
 
+func sqlString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: true}
+}
+
+func sqlInt64(value int64) sql.NullInt64 {
+	return sql.NullInt64{Int64: value, Valid: true}
+}
+
+func sqlFloat64(value float64) sql.NullFloat64 {
+	return sql.NullFloat64{Float64: value, Valid: true}
+}
+
+func sqlBool(value bool) sql.NullInt64 {
+	return sqlInt64(int64(boolInt(value)))
+}
+
+func sqlFilter(enabled bool) int64 {
+	if enabled {
+		return 1
+	}
+	return 0
+}
+
+func sqlLimit(limit int) int64 {
+	if limit > 0 {
+		return int64(limit)
+	}
+	return -1
+}
+
+func sqlUntilEndOfDay(until string) sql.NullString {
+	if until == "" {
+		return sqlString("")
+	}
+	return sqlString(until + "T23:59:59Z")
+}
+
 func (c *Cache) UpsertRepo(repo Repo) error {
 	raw, _ := json.Marshal(repo)
-	_, err := c.db.Exec(`insert into repos(full_name,id,account,owner,owner_kind,name,private,billing_owner,billing_owner_kind,billing_plan,raw_json,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
-		on conflict(full_name) do update set id=excluded.id, account=excluded.account, owner=excluded.owner, owner_kind=excluded.owner_kind, name=excluded.name, private=excluded.private, billing_owner=excluded.billing_owner, billing_owner_kind=excluded.billing_owner_kind, billing_plan=excluded.billing_plan, raw_json=excluded.raw_json, updated_at=current_timestamp`,
-		repo.FullName, repo.ID, repo.Account, repo.Owner, repo.OwnerKind, repo.Name, boolInt(repo.Private), repo.BillingOwner, repo.BillingOwnerKind, repo.BillingPlan, string(firstRaw(repo.Raw, raw)))
-	return err
+	return c.queries.UpsertRepo(context.Background(), store.UpsertRepoParams{
+		FullName:         repo.FullName,
+		ID:               sqlInt64(repo.ID),
+		Account:          sqlString(repo.Account),
+		Owner:            sqlString(repo.Owner),
+		OwnerKind:        sqlString(repo.OwnerKind),
+		Name:             sqlString(repo.Name),
+		Private:          sqlBool(repo.Private),
+		BillingOwner:     sqlString(repo.BillingOwner),
+		BillingOwnerKind: sqlString(repo.BillingOwnerKind),
+		BillingPlan:      sqlString(repo.BillingPlan),
+		RawJSON:          sqlString(string(firstRaw(repo.Raw, raw))),
+	})
 }
 
 func (c *Cache) UpsertRun(run RunRecord) error {
 	raw, _ := json.Marshal(run)
-	_, err := c.db.Exec(`insert into runs(id,account,repo,repo_owner,repo_owner_kind,billing_owner,billing_owner_kind,billing_plan,workflow_id,workflow_name,workflow_path,run_number,run_attempt,event,branch,actor,status,conclusion,created_at,run_started_at,html_url,raw_json,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
-		on conflict(id) do update set account=excluded.account, repo=excluded.repo, repo_owner=excluded.repo_owner, repo_owner_kind=excluded.repo_owner_kind, billing_owner=excluded.billing_owner, billing_owner_kind=excluded.billing_owner_kind, billing_plan=excluded.billing_plan, workflow_id=excluded.workflow_id, workflow_name=excluded.workflow_name, workflow_path=excluded.workflow_path, run_number=excluded.run_number, run_attempt=excluded.run_attempt, event=excluded.event, branch=excluded.branch, actor=excluded.actor, status=excluded.status, conclusion=excluded.conclusion, created_at=excluded.created_at, run_started_at=excluded.run_started_at, html_url=excluded.html_url, raw_json=excluded.raw_json, updated_at=current_timestamp`,
-		run.ID, run.Account, run.Repo, run.RepoOwner, run.RepoOwnerKind, run.BillingOwner, run.BillingOwnerKind, run.BillingPlan, run.WorkflowID, run.WorkflowName, run.WorkflowPath, run.RunNumber, run.RunAttempt, run.Event, run.Branch, run.Actor, run.Status, run.Conclusion, run.CreatedAt, run.RunStartedAt, run.HTMLURL, string(firstRaw(run.Raw, raw)))
-	return err
+	return c.queries.UpsertRun(context.Background(), store.UpsertRunParams{
+		ID:               run.ID,
+		Account:          sqlString(run.Account),
+		Repo:             sqlString(run.Repo),
+		RepoOwner:        sqlString(run.RepoOwner),
+		RepoOwnerKind:    sqlString(run.RepoOwnerKind),
+		BillingOwner:     sqlString(run.BillingOwner),
+		BillingOwnerKind: sqlString(run.BillingOwnerKind),
+		BillingPlan:      sqlString(run.BillingPlan),
+		WorkflowID:       sqlInt64(run.WorkflowID),
+		WorkflowName:     sqlString(run.WorkflowName),
+		WorkflowPath:     sqlString(run.WorkflowPath),
+		RunNumber:        sqlInt64(run.RunNumber),
+		RunAttempt:       sqlInt64(run.RunAttempt),
+		Event:            sqlString(run.Event),
+		Branch:           sqlString(run.Branch),
+		Actor:            sqlString(run.Actor),
+		Status:           sqlString(run.Status),
+		Conclusion:       sqlString(run.Conclusion),
+		CreatedAt:        sqlString(run.CreatedAt),
+		RunStartedAt:     sqlString(run.RunStartedAt),
+		HtmlURL:          sqlString(run.HTMLURL),
+		RawJSON:          sqlString(string(firstRaw(run.Raw, raw))),
+	})
 }
 
 func (c *Cache) UpsertJob(job JobRecord) error {
 	labels, _ := json.Marshal(job.Labels)
 	raw, _ := json.Marshal(job)
-	_, err := c.db.Exec(`insert into jobs(id,run_id,account,repo,repo_owner,repo_owner_kind,billing_owner,billing_owner_kind,billing_plan,cost_class,workflow_name,workflow_path,name,status,conclusion,started_at,completed_at,duration_seconds,runner_name,runner_group,runner_type,runner_os,runner_arch,runner_image,labels_json,html_url,raw_json,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
-		on conflict(id) do update set run_id=excluded.run_id, account=excluded.account, repo=excluded.repo, repo_owner=excluded.repo_owner, repo_owner_kind=excluded.repo_owner_kind, billing_owner=excluded.billing_owner, billing_owner_kind=excluded.billing_owner_kind, billing_plan=excluded.billing_plan, cost_class=excluded.cost_class, workflow_name=excluded.workflow_name, workflow_path=excluded.workflow_path, name=excluded.name, status=excluded.status, conclusion=excluded.conclusion, started_at=excluded.started_at, completed_at=excluded.completed_at, duration_seconds=excluded.duration_seconds, runner_name=excluded.runner_name, runner_group=excluded.runner_group, runner_type=excluded.runner_type, runner_os=excluded.runner_os, runner_arch=excluded.runner_arch, runner_image=excluded.runner_image, labels_json=excluded.labels_json, html_url=excluded.html_url, raw_json=excluded.raw_json, updated_at=current_timestamp`,
-		job.ID, job.RunID, job.Account, job.Repo, job.RepoOwner, job.RepoOwnerKind, job.BillingOwner, job.BillingOwnerKind, job.BillingPlan, job.CostClass, job.WorkflowName, job.WorkflowPath, job.Name, job.Status, job.Conclusion, job.StartedAt, job.CompletedAt, job.DurationSecs, job.RunnerName, job.RunnerGroup, job.Runner.Type, job.Runner.OS, job.Runner.Arch, job.Runner.Image, string(labels), job.HTMLURL, string(firstRaw(job.Raw, raw)))
-	return err
+	return c.queries.UpsertJob(context.Background(), store.UpsertJobParams{
+		ID:               job.ID,
+		RunID:            sqlInt64(job.RunID),
+		Account:          sqlString(job.Account),
+		Repo:             sqlString(job.Repo),
+		RepoOwner:        sqlString(job.RepoOwner),
+		RepoOwnerKind:    sqlString(job.RepoOwnerKind),
+		BillingOwner:     sqlString(job.BillingOwner),
+		BillingOwnerKind: sqlString(job.BillingOwnerKind),
+		BillingPlan:      sqlString(job.BillingPlan),
+		CostClass:        sqlString(job.CostClass),
+		WorkflowName:     sqlString(job.WorkflowName),
+		WorkflowPath:     sqlString(job.WorkflowPath),
+		Name:             sqlString(job.Name),
+		Status:           sqlString(job.Status),
+		Conclusion:       sqlString(job.Conclusion),
+		StartedAt:        sqlString(job.StartedAt),
+		CompletedAt:      sqlString(job.CompletedAt),
+		DurationSeconds:  sqlFloat64(job.DurationSecs),
+		RunnerName:       sqlString(job.RunnerName),
+		RunnerGroup:      sqlString(job.RunnerGroup),
+		RunnerType:       sqlString(job.Runner.Type),
+		RunnerOS:         sqlString(job.Runner.OS),
+		RunnerArch:       sqlString(job.Runner.Arch),
+		RunnerImage:      sqlString(job.Runner.Image),
+		LabelsJSON:       sqlString(string(labels)),
+		HtmlURL:          sqlString(job.HTMLURL),
+		RawJSON:          sqlString(string(firstRaw(job.Raw, raw))),
+	})
 }
 
 func (c *Cache) ListRuns(filters QueryFilters) ([]RunRecord, error) {
-	query := `select id,coalesce(account,''),repo,coalesce(repo_owner,''),coalesce(repo_owner_kind,''),coalesce(billing_owner,''),coalesce(billing_owner_kind,''),coalesce(billing_plan,''),workflow_id,workflow_name,workflow_path,run_number,run_attempt,event,branch,actor,status,conclusion,created_at,run_started_at,html_url,coalesce(raw_json,'') from runs`
-	where, args := filtersWhere(filters, "run_started_at")
-	if where != "" {
-		query += " where " + where
-	}
-	query += " order by run_started_at desc"
-	if filters.Limit > 0 {
-		query += fmt.Sprintf(" limit %d", filters.Limit)
-	}
-	rows, err := c.db.Query(query, args...)
+	rows, err := c.queries.ListRuns(context.Background(), store.ListRunsParams{
+		FilterRepo:  sqlFilter(filters.Repo != ""),
+		Repo:        sqlString(filters.Repo),
+		FilterSince: sqlFilter(filters.Since != ""),
+		Since:       sqlString(filters.Since),
+		FilterUntil: sqlFilter(filters.Until != ""),
+		Until:       sqlUntilEndOfDay(filters.Until),
+		Limit:       sqlLimit(filters.Limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var runs []RunRecord
-	for rows.Next() {
-		var run RunRecord
-		var raw string
-		if err := rows.Scan(&run.ID, &run.Account, &run.Repo, &run.RepoOwner, &run.RepoOwnerKind, &run.BillingOwner, &run.BillingOwnerKind, &run.BillingPlan, &run.WorkflowID, &run.WorkflowName, &run.WorkflowPath, &run.RunNumber, &run.RunAttempt, &run.Event, &run.Branch, &run.Actor, &run.Status, &run.Conclusion, &run.CreatedAt, &run.RunStartedAt, &run.HTMLURL, &raw); err != nil {
-			return nil, err
-		}
-		run.Raw = json.RawMessage(raw)
-		runs = append(runs, run)
+	for _, row := range rows {
+		runs = append(runs, RunRecord{
+			ID:               row.ID,
+			Account:          row.Account,
+			Repo:             row.Repo,
+			RepoOwner:        row.RepoOwner,
+			RepoOwnerKind:    row.RepoOwnerKind,
+			BillingOwner:     row.BillingOwner,
+			BillingOwnerKind: row.BillingOwnerKind,
+			BillingPlan:      row.BillingPlan,
+			WorkflowID:       row.WorkflowID,
+			WorkflowName:     row.WorkflowName,
+			WorkflowPath:     row.WorkflowPath,
+			RunNumber:        row.RunNumber,
+			RunAttempt:       row.RunAttempt,
+			Event:            row.Event,
+			Branch:           row.Branch,
+			Actor:            row.Actor,
+			Status:           row.Status,
+			Conclusion:       row.Conclusion,
+			CreatedAt:        row.CreatedAt,
+			RunStartedAt:     row.RunStartedAt,
+			HTMLURL:          row.HtmlURL,
+			Raw:              json.RawMessage(row.RawJSON),
+		})
 	}
-	return runs, rows.Err()
+	return runs, nil
 }
 
 func (c *Cache) ListRepos() ([]Repo, error) {
-	rows, err := c.db.Query(`select id,coalesce(account,''),owner,coalesce(owner_kind,''),name,full_name,private,coalesce(billing_owner,''),coalesce(billing_owner_kind,''),coalesce(billing_plan,''),coalesce(raw_json,'') from repos order by full_name`)
+	rows, err := c.queries.ListRepos(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var repos []Repo
-	for rows.Next() {
-		var repo Repo
-		var private int
-		var raw string
-		if err := rows.Scan(&repo.ID, &repo.Account, &repo.Owner, &repo.OwnerKind, &repo.Name, &repo.FullName, &private, &repo.BillingOwner, &repo.BillingOwnerKind, &repo.BillingPlan, &raw); err != nil {
-			return nil, err
-		}
-		repo.Private = private == 1
-		repo.Raw = json.RawMessage(raw)
-		repos = append(repos, repo)
+	for _, row := range rows {
+		repos = append(repos, Repo{
+			ID:               row.ID,
+			Account:          row.Account,
+			Owner:            row.Owner,
+			OwnerKind:        row.OwnerKind,
+			Name:             row.Name,
+			FullName:         row.FullName,
+			Private:          row.Private == 1,
+			BillingOwner:     row.BillingOwner,
+			BillingOwnerKind: row.BillingOwnerKind,
+			BillingPlan:      row.BillingPlan,
+			Raw:              json.RawMessage(row.RawJSON),
+		})
 	}
-	return repos, rows.Err()
+	return repos, nil
 }
 
 func (c *Cache) ListJobs(filters QueryFilters) ([]JobRecord, error) {
-	query := `select id,run_id,coalesce(account,''),repo,coalesce(repo_owner,''),coalesce(repo_owner_kind,''),coalesce(billing_owner,''),coalesce(billing_owner_kind,''),coalesce(billing_plan,''),coalesce(cost_class,''),workflow_name,workflow_path,name,status,conclusion,started_at,completed_at,duration_seconds,runner_name,runner_group,runner_type,runner_os,runner_arch,runner_image,coalesce(labels_json,'[]'),html_url,coalesce(raw_json,'') from jobs`
-	where, args := filtersWhere(filters, "started_at")
-	if where != "" {
-		query += " where " + where
-	}
-	query += " order by duration_seconds desc, started_at desc"
-	if filters.Limit > 0 {
-		query += fmt.Sprintf(" limit %d", filters.Limit)
-	}
-	rows, err := c.db.Query(query, args...)
+	rows, err := c.queries.ListJobs(context.Background(), store.ListJobsParams{
+		FilterRepo:  sqlFilter(filters.Repo != ""),
+		Repo:        sqlString(filters.Repo),
+		FilterSince: sqlFilter(filters.Since != ""),
+		Since:       sqlString(filters.Since),
+		FilterUntil: sqlFilter(filters.Until != ""),
+		Until:       sqlUntilEndOfDay(filters.Until),
+		Limit:       sqlLimit(filters.Limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var jobs []JobRecord
-	for rows.Next() {
-		var job JobRecord
-		var labels string
-		var raw string
-		if err := rows.Scan(&job.ID, &job.RunID, &job.Account, &job.Repo, &job.RepoOwner, &job.RepoOwnerKind, &job.BillingOwner, &job.BillingOwnerKind, &job.BillingPlan, &job.CostClass, &job.WorkflowName, &job.WorkflowPath, &job.Name, &job.Status, &job.Conclusion, &job.StartedAt, &job.CompletedAt, &job.DurationSecs, &job.RunnerName, &job.RunnerGroup, &job.Runner.Type, &job.Runner.OS, &job.Runner.Arch, &job.Runner.Image, &labels, &job.HTMLURL, &raw); err != nil {
-			return nil, err
+	for _, row := range rows {
+		job := JobRecord{
+			ID:               row.ID,
+			RunID:            row.RunID,
+			Account:          row.Account,
+			Repo:             row.Repo,
+			RepoOwner:        row.RepoOwner,
+			RepoOwnerKind:    row.RepoOwnerKind,
+			BillingOwner:     row.BillingOwner,
+			BillingOwnerKind: row.BillingOwnerKind,
+			BillingPlan:      row.BillingPlan,
+			CostClass:        row.CostClass,
+			WorkflowName:     row.WorkflowName,
+			WorkflowPath:     row.WorkflowPath,
+			Name:             row.Name,
+			Status:           row.Status,
+			Conclusion:       row.Conclusion,
+			StartedAt:        row.StartedAt,
+			CompletedAt:      row.CompletedAt,
+			DurationSecs:     row.DurationSeconds,
+			RunnerName:       row.RunnerName,
+			RunnerGroup:      row.RunnerGroup,
+			Runner: RunnerMetadata{
+				Type:  row.RunnerType,
+				OS:    row.RunnerOS,
+				Arch:  row.RunnerArch,
+				Image: row.RunnerImage,
+			},
+			HTMLURL: row.HtmlURL,
+			Raw:     json.RawMessage(row.RawJSON),
 		}
-		_ = json.Unmarshal([]byte(labels), &job.Labels)
-		job.Raw = json.RawMessage(raw)
+		_ = json.Unmarshal([]byte(row.LabelsJSON), &job.Labels)
 		jobs = append(jobs, job)
 	}
-	return jobs, rows.Err()
+	return jobs, nil
 }
 
 func (c *Cache) UpsertBillingUsage(record BillingUsageRecord) error {
 	raw, _ := json.Marshal(record)
-	_, err := c.db.Exec(`insert into billing_usage(key,account,account_kind,date,year,month,day,product,sku,unit_type,model,organization_name,repository_name,cost_center_id,cost_class,quantity,gross_quantity,discount_quantity,net_quantity,price_per_unit,gross_amount,discount_amount,net_amount,raw_json,updated_at)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,current_timestamp)
-		on conflict(key) do update set account=excluded.account, account_kind=excluded.account_kind, date=excluded.date, year=excluded.year, month=excluded.month, day=excluded.day, product=excluded.product, sku=excluded.sku, unit_type=excluded.unit_type, model=excluded.model, organization_name=excluded.organization_name, repository_name=excluded.repository_name, cost_center_id=excluded.cost_center_id, cost_class=excluded.cost_class, quantity=excluded.quantity, gross_quantity=excluded.gross_quantity, discount_quantity=excluded.discount_quantity, net_quantity=excluded.net_quantity, price_per_unit=excluded.price_per_unit, gross_amount=excluded.gross_amount, discount_amount=excluded.discount_amount, net_amount=excluded.net_amount, raw_json=excluded.raw_json, updated_at=current_timestamp`,
-		record.Key, record.Account, record.AccountKind, record.Date, record.Year, record.Month, record.Day, record.Product, record.SKU, record.UnitType, record.Model, record.OrganizationName, record.RepositoryName, record.CostCenterID, record.CostClass, record.Quantity, record.GrossQuantity, record.DiscountQuantity, record.NetQuantity, record.PricePerUnit, record.GrossAmount, record.DiscountAmount, record.NetAmount, string(firstRaw(record.Raw, raw)))
-	return err
+	return c.queries.UpsertBillingUsage(context.Background(), store.UpsertBillingUsageParams{
+		Key:              record.Key,
+		Account:          sqlString(record.Account),
+		AccountKind:      sqlString(record.AccountKind),
+		Date:             sqlString(record.Date),
+		Year:             sqlInt64(int64(record.Year)),
+		Month:            sqlInt64(int64(record.Month)),
+		Day:              sqlInt64(int64(record.Day)),
+		Product:          sqlString(record.Product),
+		SKU:              sqlString(record.SKU),
+		UnitType:         sqlString(record.UnitType),
+		Model:            sqlString(record.Model),
+		OrganizationName: sqlString(record.OrganizationName),
+		RepositoryName:   sqlString(record.RepositoryName),
+		CostCenterID:     sqlString(record.CostCenterID),
+		CostClass:        sqlString(record.CostClass),
+		Quantity:         sqlFloat64(record.Quantity),
+		GrossQuantity:    sqlFloat64(record.GrossQuantity),
+		DiscountQuantity: sqlFloat64(record.DiscountQuantity),
+		NetQuantity:      sqlFloat64(record.NetQuantity),
+		PricePerUnit:     sqlFloat64(record.PricePerUnit),
+		GrossAmount:      sqlFloat64(record.GrossAmount),
+		DiscountAmount:   sqlFloat64(record.DiscountAmount),
+		NetAmount:        sqlFloat64(record.NetAmount),
+		RawJSON:          sqlString(string(firstRaw(record.Raw, raw))),
+	})
 }
 
 func (c *Cache) ListBillingUsage(filters BillingQueryFilters) ([]BillingUsageRecord, error) {
-	query := `select key,account,account_kind,coalesce(date,''),coalesce(year,0),coalesce(month,0),coalesce(day,0),coalesce(product,''),coalesce(sku,''),coalesce(unit_type,''),coalesce(model,''),coalesce(organization_name,''),coalesce(repository_name,''),coalesce(cost_center_id,''),coalesce(cost_class,''),coalesce(quantity,0),coalesce(gross_quantity,0),coalesce(discount_quantity,0),coalesce(net_quantity,0),coalesce(price_per_unit,0),coalesce(gross_amount,0),coalesce(discount_amount,0),coalesce(net_amount,0),coalesce(raw_json,'') from billing_usage`
-	where, args := billingFiltersWhere(filters)
-	if where != "" {
-		query += " where " + where
-	}
-	query += " order by net_amount desc, date desc"
-	if filters.Limit > 0 {
-		query += fmt.Sprintf(" limit %d", filters.Limit)
-	}
-	rows, err := c.db.Query(query, args...)
+	rows, err := c.queries.ListBillingUsage(context.Background(), store.ListBillingUsageParams{
+		FilterAccount:      sqlFilter(filters.Account != ""),
+		Account:            sqlString(filters.Account),
+		FilterRepo:         sqlFilter(filters.Repo != ""),
+		Repo:               sqlString(filters.Repo),
+		FilterSince:        sqlFilter(filters.Since != ""),
+		Since:              sqlString(filters.Since),
+		FilterUntil:        sqlFilter(filters.Until != ""),
+		Until:              sqlString(filters.Until),
+		FilterYear:         sqlFilter(filters.Year != 0),
+		Year:               sqlInt64(int64(filters.Year)),
+		FilterMonth:        sqlFilter(filters.Month != 0),
+		Month:              sqlInt64(int64(filters.Month)),
+		FilterDay:          sqlFilter(filters.Day != 0),
+		Day:                sqlInt64(int64(filters.Day)),
+		FilterProduct:      sqlFilter(filters.Product != ""),
+		Product:            sqlString(filters.Product),
+		FilterSKU:          sqlFilter(filters.SKU != ""),
+		SKU:                sqlString(filters.SKU),
+		FilterOrganization: sqlFilter(filters.Organization != ""),
+		Organization:       sqlString(filters.Organization),
+		FilterCostCenterID: sqlFilter(filters.CostCenterID != ""),
+		CostCenterID:       sqlString(filters.CostCenterID),
+		Limit:              sqlLimit(filters.Limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var records []BillingUsageRecord
-	for rows.Next() {
-		var record BillingUsageRecord
-		var raw string
-		if err := rows.Scan(&record.Key, &record.Account, &record.AccountKind, &record.Date, &record.Year, &record.Month, &record.Day, &record.Product, &record.SKU, &record.UnitType, &record.Model, &record.OrganizationName, &record.RepositoryName, &record.CostCenterID, &record.CostClass, &record.Quantity, &record.GrossQuantity, &record.DiscountQuantity, &record.NetQuantity, &record.PricePerUnit, &record.GrossAmount, &record.DiscountAmount, &record.NetAmount, &raw); err != nil {
-			return nil, err
-		}
-		record.Raw = json.RawMessage(raw)
-		records = append(records, record)
+	for _, row := range rows {
+		records = append(records, BillingUsageRecord{
+			Key:              row.Key,
+			Account:          row.Account,
+			AccountKind:      row.AccountKind,
+			Date:             row.Date,
+			Year:             int(row.Year),
+			Month:            int(row.Month),
+			Day:              int(row.Day),
+			Product:          row.Product,
+			SKU:              row.SKU,
+			UnitType:         row.UnitType,
+			Model:            row.Model,
+			OrganizationName: row.OrganizationName,
+			RepositoryName:   row.RepositoryName,
+			CostCenterID:     row.CostCenterID,
+			CostClass:        row.CostClass,
+			Quantity:         row.Quantity,
+			GrossQuantity:    row.GrossQuantity,
+			DiscountQuantity: row.DiscountQuantity,
+			NetQuantity:      row.NetQuantity,
+			PricePerUnit:     row.PricePerUnit,
+			GrossAmount:      row.GrossAmount,
+			DiscountAmount:   row.DiscountAmount,
+			NetAmount:        row.NetAmount,
+			Raw:              json.RawMessage(row.RawJSON),
+		})
 	}
-	return records, rows.Err()
-}
-
-func filtersWhere(filters QueryFilters, timeField string) (string, []any) {
-	var parts []string
-	var args []any
-	if filters.Repo != "" {
-		parts = append(parts, "repo = ?")
-		args = append(args, filters.Repo)
-	}
-	if filters.Since != "" {
-		parts = append(parts, timeField+" >= ?")
-		args = append(args, filters.Since)
-	}
-	if filters.Until != "" {
-		parts = append(parts, timeField+" <= ?")
-		args = append(args, filters.Until+"T23:59:59Z")
-	}
-	return strings.Join(parts, " and "), args
-}
-
-func billingFiltersWhere(filters BillingQueryFilters) (string, []any) {
-	var parts []string
-	var args []any
-	if filters.Account != "" {
-		parts = append(parts, "account = ?")
-		args = append(args, filters.Account)
-	}
-	if filters.Repo != "" {
-		parts = append(parts, "repository_name = ?")
-		args = append(args, filters.Repo)
-	}
-	if filters.Since != "" {
-		parts = append(parts, "date >= ?")
-		args = append(args, filters.Since)
-	}
-	if filters.Until != "" {
-		parts = append(parts, "date <= ?")
-		args = append(args, filters.Until)
-	}
-	if filters.Year != 0 {
-		parts = append(parts, "year = ?")
-		args = append(args, filters.Year)
-	}
-	if filters.Month != 0 {
-		parts = append(parts, "month = ?")
-		args = append(args, filters.Month)
-	}
-	if filters.Day != 0 {
-		parts = append(parts, "day = ?")
-		args = append(args, filters.Day)
-	}
-	if filters.Product != "" {
-		parts = append(parts, "product = ?")
-		args = append(args, filters.Product)
-	}
-	if filters.SKU != "" {
-		parts = append(parts, "sku = ?")
-		args = append(args, filters.SKU)
-	}
-	if filters.Organization != "" {
-		parts = append(parts, "organization_name = ?")
-		args = append(args, filters.Organization)
-	}
-	if filters.CostCenterID != "" {
-		parts = append(parts, "cost_center_id = ?")
-		args = append(args, filters.CostCenterID)
-	}
-	return strings.Join(parts, " and "), args
+	return records, nil
 }
 
 func (c *Cache) Stats() (map[string]int, error) {
-	tables := []string{"repos", "runs", "jobs", "billing_usage"}
-	stats := map[string]int{}
-	for _, table := range tables {
-		row := c.db.QueryRow("select count(*) from " + table)
-		var count int
-		if err := row.Scan(&count); err != nil {
-			return nil, err
-		}
-		stats[table] = count
+	row, err := c.queries.Stats(context.Background())
+	if err != nil {
+		return nil, err
 	}
-	return stats, nil
+	return map[string]int{
+		"repos":         int(row.Repos),
+		"runs":          int(row.Runs),
+		"jobs":          int(row.Jobs),
+		"billing_usage": int(row.BillingUsage),
+	}, nil
 }
 
 func (c *Cache) Clear() error {
-	for _, table := range []string{"billing_usage", "jobs", "runs", "repos"} {
-		if _, err := c.db.Exec("delete from " + table); err != nil {
-			return err
-		}
+	ctx := context.Background()
+	if err := c.queries.ClearBillingUsage(ctx); err != nil {
+		return err
 	}
-	return nil
+	if err := c.queries.ClearJobs(ctx); err != nil {
+		return err
+	}
+	if err := c.queries.ClearRuns(ctx); err != nil {
+		return err
+	}
+	return c.queries.ClearRepos(ctx)
 }
 
 func firstRaw(raw json.RawMessage, fallback []byte) []byte {

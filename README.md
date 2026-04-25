@@ -119,6 +119,7 @@ transcript.
 
 ```bash
 make test
+make sqlc
 make build
 make install-local
 make docs-check

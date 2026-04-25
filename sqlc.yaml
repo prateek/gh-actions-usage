@@ -1,0 +1,19 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    schema: "internal/db/schema.sql"
+    queries: "internal/db/query.sql"
+    gen:
+      go:
+        package: "db"
+        out: "internal/db"
+        sql_package: "database/sql"
+        query_parameter_limit: 0
+        emit_empty_slices: true
+        omit_unused_structs: true
+        initialisms:
+          - "id"
+          - "url"
+          - "json"
+          - "os"
+          - "sku"

@@ -44,28 +44,42 @@ install-gh-local:
 
 .PHONY: fmt
 fmt:
-	gofmt -w *.go
+	gofmt -w *.go internal/db/*.go
 
 .PHONY: fmt-check
 fmt-check:
-	@files="$$(gofmt -l *.go)"; \
+	@files="$$(gofmt -l *.go internal/db/*.go)"; \
 	if [ -n "$$files" ]; then \
 		echo "gofmt needed:" >&2; \
 		echo "$$files" >&2; \
 		exit 1; \
 	fi
 
+.PHONY: sqlc
+sqlc:
+	go tool sqlc generate
+
+.PHONY: sqlc-check
+sqlc-check:
+	@tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	mkdir -p "$$tmp/internal"; \
+	cp go.mod go.sum sqlc.yaml "$$tmp"/; \
+	cp -R internal/db "$$tmp/internal/db"; \
+	(cd "$$tmp" && go tool sqlc generate); \
+	diff -ru internal/db "$$tmp/internal/db"
+
 .PHONY: coverage
 coverage:
 	@tmp="$$(mktemp)"; \
 	trap 'rm -f "$$tmp"' EXIT; \
-	go test ./... -coverprofile="$$tmp"; \
+	go test . -coverprofile="$$tmp"; \
 	go tool cover -func="$$tmp"; \
 	total="$$(go tool cover -func="$$tmp" | awk '/^total:/ {gsub(/%/,"",$$3); print $$3}')"; \
 	awk -v total="$$total" -v min="$(COVERAGE_MIN)" 'BEGIN { if (total + 0 < min + 0) { printf("coverage %.1f%% below %.1f%%\n", total, min); exit 1 } printf("coverage %.1f%% meets %.1f%%\n", total, min) }'
 
 .PHONY: check
-check: fmt-check test coverage build-check
+check: sqlc-check fmt-check test coverage build-check
 	git diff --check
 
 .PHONY: docs-check

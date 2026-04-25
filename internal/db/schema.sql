@@ -1,0 +1,103 @@
+CREATE TABLE IF NOT EXISTS repos (
+    full_name TEXT PRIMARY KEY,
+    id INTEGER,
+    account TEXT,
+    owner TEXT,
+    owner_kind TEXT,
+    name TEXT,
+    private INTEGER,
+    billing_owner TEXT,
+    billing_owner_kind TEXT,
+    billing_plan TEXT,
+    raw_json TEXT,
+    updated_at TEXT DEFAULT current_timestamp
+);
+
+CREATE TABLE IF NOT EXISTS runs (
+    id INTEGER PRIMARY KEY,
+    account TEXT,
+    repo TEXT,
+    repo_owner TEXT,
+    repo_owner_kind TEXT,
+    billing_owner TEXT,
+    billing_owner_kind TEXT,
+    billing_plan TEXT,
+    workflow_id INTEGER,
+    workflow_name TEXT,
+    workflow_path TEXT,
+    run_number INTEGER,
+    run_attempt INTEGER,
+    event TEXT,
+    branch TEXT,
+    actor TEXT,
+    status TEXT,
+    conclusion TEXT,
+    created_at TEXT,
+    run_started_at TEXT,
+    html_url TEXT,
+    raw_json TEXT,
+    updated_at TEXT DEFAULT current_timestamp
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER,
+    account TEXT,
+    repo TEXT,
+    repo_owner TEXT,
+    repo_owner_kind TEXT,
+    billing_owner TEXT,
+    billing_owner_kind TEXT,
+    billing_plan TEXT,
+    cost_class TEXT,
+    workflow_name TEXT,
+    workflow_path TEXT,
+    name TEXT,
+    status TEXT,
+    conclusion TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    duration_seconds REAL,
+    runner_name TEXT,
+    runner_group TEXT,
+    runner_type TEXT,
+    runner_os TEXT,
+    runner_arch TEXT,
+    runner_image TEXT,
+    labels_json TEXT,
+    html_url TEXT,
+    raw_json TEXT,
+    updated_at TEXT DEFAULT current_timestamp
+);
+
+CREATE TABLE IF NOT EXISTS billing_usage (
+    "key" TEXT PRIMARY KEY,
+    account TEXT,
+    account_kind TEXT,
+    date TEXT,
+    year INTEGER,
+    month INTEGER,
+    day INTEGER,
+    product TEXT,
+    sku TEXT,
+    unit_type TEXT,
+    model TEXT,
+    organization_name TEXT,
+    repository_name TEXT,
+    cost_center_id TEXT,
+    cost_class TEXT,
+    quantity REAL,
+    gross_quantity REAL,
+    discount_quantity REAL,
+    net_quantity REAL,
+    price_per_unit REAL,
+    gross_amount REAL,
+    discount_amount REAL,
+    net_amount REAL,
+    raw_json TEXT,
+    updated_at TEXT DEFAULT current_timestamp
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_repo_started ON jobs(repo, started_at);
+CREATE INDEX IF NOT EXISTS idx_runs_repo_started ON runs(repo, run_started_at);
+CREATE INDEX IF NOT EXISTS idx_billing_usage_account_date ON billing_usage(account, date);
