@@ -3,8 +3,20 @@ set -euo pipefail
 
 extension_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 binary="${extension_dir}/bin/gh-actions-usage"
+needs_build=0
 
-if [[ ! -x "${binary}" || "${extension_dir}/main.go" -nt "${binary}" ]]; then
+if [[ ! -x "${binary}" ]]; then
+  needs_build=1
+else
+  for source in "${extension_dir}"/*.go "${extension_dir}/go.mod" "${extension_dir}/go.sum" "${extension_dir}/web/index.html"; do
+    if [[ -e "${source}" && "${source}" -nt "${binary}" ]]; then
+      needs_build=1
+      break
+    fi
+  done
+fi
+
+if [[ "${needs_build}" -eq 1 ]]; then
   if ! command -v go >/dev/null 2>&1; then
     echo "gh-actions-usage requires Go to build from source. Install Go or use a release artifact." >&2
     exit 1

@@ -15,9 +15,12 @@ gh extension install prateek/gh-actions-usage
 From a checkout:
 
 ```bash
-make install-local
+gh extension install .
 gh actions-usage doctor
 ```
+
+`make install-local` installs the binary on `PATH`; it does not register the
+checkout with `gh extension`.
 
 ## Quick Start
 

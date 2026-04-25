@@ -135,8 +135,8 @@ Keyboard shortcuts:
 gh actions-usage export --out actions-usage-report.json
 ```
 
-The export includes cached repositories, runs, and jobs. It does not call
-GitHub.
+The export includes cached repositories, runs, jobs, and billing usage rows. It
+does not call GitHub.
 
 Import the same data into a fresh cache:
 

@@ -85,19 +85,29 @@ type Repo struct {
 
 func (r *Repo) UnmarshalJSON(data []byte) error {
 	var aux struct {
-		ID       int64           `json:"id"`
-		Name     string          `json:"name"`
-		FullName string          `json:"full_name"`
-		Private  bool            `json:"private"`
-		Owner    json.RawMessage `json:"owner"`
+		ID               int64           `json:"id"`
+		Account          string          `json:"account"`
+		Name             string          `json:"name"`
+		FullName         string          `json:"full_name"`
+		Private          bool            `json:"private"`
+		Owner            json.RawMessage `json:"owner"`
+		OwnerKind        string          `json:"owner_kind"`
+		BillingOwner     string          `json:"billing_owner"`
+		BillingOwnerKind string          `json:"billing_owner_kind"`
+		BillingPlan      string          `json:"billing_plan"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 	r.ID = aux.ID
+	r.Account = aux.Account
 	r.Name = aux.Name
 	r.FullName = aux.FullName
 	r.Private = aux.Private
+	r.OwnerKind = normalizeAccountKind(aux.OwnerKind)
+	r.BillingOwner = aux.BillingOwner
+	r.BillingOwnerKind = normalizeAccountKind(aux.BillingOwnerKind)
+	r.BillingPlan = aux.BillingPlan
 	var ownerString string
 	if err := json.Unmarshal(aux.Owner, &ownerString); err == nil {
 		r.Owner = ownerString
@@ -108,7 +118,9 @@ func (r *Repo) UnmarshalJSON(data []byte) error {
 		}
 		_ = json.Unmarshal(aux.Owner, &ownerObject)
 		r.Owner = ownerObject.Login
-		r.OwnerKind = normalizeAccountKind(ownerObject.Type)
+		if ownerObject.Type != "" {
+			r.OwnerKind = normalizeAccountKind(ownerObject.Type)
+		}
 	}
 	if r.FullName == "" && r.Owner != "" && r.Name != "" {
 		r.FullName = r.Owner + "/" + r.Name
@@ -217,6 +229,7 @@ type IngestOptions struct {
 	Since         string
 	Until         string
 	Days          int
+	DaysSet       bool
 	AccountPlans  map[string]string
 	BillingOwners map[string]string
 	BillingKinds  map[string]string
@@ -358,6 +371,9 @@ func main() {
 }
 
 func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
+	if printHelpForArgs(stdout, args) {
+		return 0
+	}
 	cachePath := defaultCachePath()
 	cache, err := openCacheFunc(cachePath)
 	if err != nil {
@@ -380,8 +396,7 @@ func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 }
 
 func (a *App) Run(ctx context.Context, args []string) error {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		printHelp(a.stdout)
+	if printHelpForArgs(a.stdout, args) {
 		return nil
 	}
 
@@ -415,6 +430,64 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func isHelpArg(arg string) bool {
+	return arg == "-h" || arg == "--help" || arg == "help"
+}
+
+func hasHelpArg(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return false
+}
+
+func printHelpForArgs(w io.Writer, args []string) bool {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		printHelp(w)
+		return true
+	}
+	if !hasHelpArg(args) {
+		return false
+	}
+	switch args[0] {
+	case "doctor":
+		if len(args) > 1 && args[1] == "ingest" {
+			fmt.Fprintln(w, "usage: doctor ingest actions --account @me|ORG [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD]")
+		} else {
+			fmt.Fprintln(w, "usage: doctor [--json]")
+		}
+	case "accounts":
+		fmt.Fprintln(w, "usage: accounts list [--json]")
+	case "repos":
+		fmt.Fprintln(w, "usage: repos list --account @me|ORG [--json]")
+	case "report":
+		fmt.Fprintln(w, "usage: report --account @me|ORG[,ORG...] [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]")
+	case "billing":
+		fmt.Fprintln(w, "usage: billing refresh|summary")
+	case "summary":
+		fmt.Fprintln(w, "usage: summary [--group-by repo,workflow-path,job,runner-image] [--json]")
+	case "runs":
+		fmt.Fprintln(w, "usage: runs list [--repo OWNER/NAME] [--limit 50] [--json]")
+	case "jobs":
+		fmt.Fprintln(w, "usage: jobs list [--repo OWNER/NAME] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit 50] [--json]")
+	case "import":
+		fmt.Fprintln(w, "usage: import --in report.json [--json]")
+	case "export":
+		fmt.Fprintln(w, "usage: export --out report.json")
+	case "serve":
+		fmt.Fprintln(w, "usage: serve [--refresh] [--account @me|ORG] [--repo OWNER/NAME] [--since YYYY-MM-DD] [--listen 127.0.0.1:8080] [--open]")
+	case "api":
+		fmt.Fprintln(w, "usage: api get /path")
+	case "cache":
+		fmt.Fprintln(w, "usage: cache path|stats|clear")
+	default:
+		printHelp(w)
+	}
+	return true
 }
 
 func printHelp(w io.Writer) {
@@ -498,6 +571,12 @@ func authSource() string {
 	}
 	if os.Getenv("GITHUB_TOKEN") != "" {
 		return "env:GITHUB_TOKEN"
+	}
+	if os.Getenv("GH_ENTERPRISE_TOKEN") != "" {
+		return "env:GH_ENTERPRISE_TOKEN"
+	}
+	if os.Getenv("GITHUB_ENTERPRISE_TOKEN") != "" {
+		return "env:GITHUB_ENTERPRISE_TOKEN"
 	}
 	return "gh"
 }
@@ -589,7 +668,7 @@ func (a *App) cmdDoctorIngest(ctx context.Context, args []string) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	result, _, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
+	result, _, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, DaysSet: flagWasSet(fs, "days"), AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
 	if err != nil {
 		return err
 	}
@@ -620,7 +699,7 @@ func (a *App) cmdReport(ctx context.Context, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
+	result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, DaysSet: flagWasSet(fs, "days"), AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
 	if err != nil {
 		return err
 	}
@@ -750,6 +829,7 @@ func (a *App) fetchBillingUsage(ctx context.Context, account accountContext, fil
 
 func billingUsageEndpoint(account accountContext, filters BillingQueryFilters) (string, error) {
 	var base string
+	summary := filters.Repo != "" || filters.Product != "" || filters.SKU != "" || filters.Organization != "" || filters.CostCenterID != ""
 	switch account.Kind {
 	case "user":
 		base = "users/" + url.PathEscape(account.Login) + "/settings/billing/usage"
@@ -759,6 +839,9 @@ func billingUsageEndpoint(account accountContext, filters BillingQueryFilters) (
 		base = "enterprises/" + url.PathEscape(account.Login) + "/settings/billing/usage"
 	default:
 		return "", fmt.Errorf("unsupported billing account kind %q", account.Kind)
+	}
+	if summary {
+		base += "/summary"
 	}
 	params := orderedQueryParams{
 		{"year", strconv.Itoa(filters.Year), filters.Year != 0},
@@ -933,7 +1016,7 @@ func (a *App) refreshActions(ctx context.Context, options IngestOptions) (Ingest
 	if options.Account == "" {
 		options.Account = "@me"
 	}
-	if options.Days == 0 {
+	if options.Days == 0 && !options.DaysSet {
 		options.Days = 30
 	}
 	created, err := createdQuery(options.Since, options.Until, options.Days, a.now())
@@ -1342,7 +1425,7 @@ func (a *App) cmdServe(ctx context.Context, args []string) error {
 		return err
 	}
 	if *refresh {
-		result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
+		result, selected, err := a.refreshActions(ctx, IngestOptions{Account: *account, RepoFilter: *repoFilter, Since: *since, Until: *until, Days: *days, DaysSet: flagWasSet(fs, "days"), AccountPlans: accountPlans, BillingOwners: billingOwners, BillingKinds: billingKinds})
 		if err != nil {
 			return err
 		}
@@ -1387,6 +1470,13 @@ func (a *App) cmdAPI(args []string) error {
 
 func (a *App) cmdCache(args []string) error {
 	if len(args) == 0 {
+		return fmt.Errorf("usage: cache path|stats|clear")
+	}
+	if hasHelpArg(args) {
+		fmt.Fprintln(a.stdout, "usage: cache path|stats|clear")
+		return nil
+	}
+	if len(args) != 1 {
 		return fmt.Errorf("usage: cache path|stats|clear")
 	}
 	switch args[0] {
@@ -1657,9 +1747,6 @@ func filterJobsByRepos(jobs []JobRecord, repos []Repo) []JobRecord {
 
 func reportFilters(repo string, since string, until string, days int, now time.Time) QueryFilters {
 	if since == "" && until == "" {
-		if days == 0 {
-			days = 30
-		}
 		since = now.AddDate(0, 0, -days).Format(dateFormat)
 	}
 	return QueryFilters{Repo: repo, Since: since, Until: until}
@@ -1674,6 +1761,16 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
 }
 
 type keyValueFlag map[string]string
@@ -1805,6 +1902,7 @@ func summarize(jobs []JobRecord, groupBy []string) []SummaryGroup {
 		return nil
 	}
 	groups := map[string]*SummaryGroup{}
+	groupRuns := map[string]map[int64]bool{}
 	for _, job := range jobs {
 		values := map[string]string{}
 		keyParts := make([]string, 0, len(groupBy))
@@ -1818,8 +1916,10 @@ func summarize(jobs []JobRecord, groupBy []string) []SummaryGroup {
 		if group == nil {
 			group = &SummaryGroup{Key: key, Values: values, Counts: map[string]int{}}
 			groups[key] = group
+			groupRuns[key] = map[int64]bool{}
 		}
 		group.Jobs++
+		groupRuns[key][job.RunID] = true
 		group.Counts[firstNonEmpty(job.Conclusion, "unknown")]++
 		group.TotalSeconds += job.DurationSecs
 		if job.DurationSecs > group.LongestSecs {
@@ -1832,7 +1932,7 @@ func summarize(jobs []JobRecord, groupBy []string) []SummaryGroup {
 		if group.Jobs > 0 {
 			group.AverageSecs = group.TotalSeconds / float64(group.Jobs)
 		}
-		group.Runs = 0
+		group.Runs = len(groupRuns[group.Key])
 		out = append(out, *group)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -2132,6 +2232,8 @@ func (c *Cache) Close() error { return c.db.Close() }
 
 func (c *Cache) init() error {
 	statements := []string{
+		`pragma journal_mode = wal`,
+		`pragma busy_timeout = 5000`,
 		`create table if not exists repos (
 			full_name text primary key,
 			id integer,
@@ -2546,6 +2648,7 @@ func (a *App) webHandlerWithScope(scope WebScope) (http.Handler, error) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = writeJSON(w, buildSummary(a.cache.Path(), jobs, scope.Filters, []string{"repo", "workflow-path", "job", "runner-image"}, a.now()))
 	})
 	mux.HandleFunc("/api/jobs", func(w http.ResponseWriter, r *http.Request) {
@@ -2560,6 +2663,7 @@ func (a *App) webHandlerWithScope(scope WebScope) (http.Handler, error) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = writeJSON(w, jobs)
 	})
 	return mux, nil

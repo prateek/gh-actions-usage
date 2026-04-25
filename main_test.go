@@ -36,6 +36,7 @@ func TestCreatedQuery(t *testing.T) {
 		want  string
 	}{
 		{name: "days", days: 7, want: ">=2026-04-17"},
+		{name: "today", days: 0, want: ">=2026-04-24"},
 		{name: "since", since: "2026-04-01", days: 30, want: ">=2026-04-01"},
 		{name: "until", until: "2026-04-10", days: 30, want: "<=2026-04-10"},
 		{name: "range", since: "2026-04-01", until: "2026-04-10", days: 30, want: "2026-04-01..2026-04-10"},
@@ -53,6 +54,14 @@ func TestCreatedQuery(t *testing.T) {
 	}
 }
 
+func TestReportFiltersAllowsZeroDayWindow(t *testing.T) {
+	now := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
+	got := reportFilters("", "", "", 0, now)
+	if got.Since != "2026-04-24" {
+		t.Fatalf("report filters since = %q, want today", got.Since)
+	}
+}
+
 func TestRepoUnmarshalCapturesOwnerAndRaw(t *testing.T) {
 	var repo Repo
 	if err := json.Unmarshal([]byte(`{"id":1,"name":"app","full_name":"octo/app","private":true,"owner":{"login":"octo"}}`), &repo); err != nil {
@@ -63,6 +72,16 @@ func TestRepoUnmarshalCapturesOwnerAndRaw(t *testing.T) {
 	}
 	if len(repo.Raw) == 0 {
 		t.Fatal("raw JSON was not captured")
+	}
+}
+
+func TestRepoUnmarshalPreservesExportedAttribution(t *testing.T) {
+	var repo Repo
+	if err := json.Unmarshal([]byte(`{"id":1,"account":"octo","owner":"octo","owner_kind":"user","name":"app","full_name":"octo/app","private":true,"billing_owner":"acme","billing_owner_kind":"enterprise","billing_plan":"enterprise"}`), &repo); err != nil {
+		t.Fatal(err)
+	}
+	if repo.Account != "octo" || repo.OwnerKind != "user" || repo.BillingOwner != "acme" || repo.BillingOwnerKind != "enterprise" || repo.BillingPlan != "enterprise" {
+		t.Fatalf("repo attribution = %#v", repo)
 	}
 }
 
@@ -81,7 +100,7 @@ func TestBillingUsageEndpointSupportsEnterpriseFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "enterprises/acme/settings/billing/usage?year=2026&month=4&organization=demo-org&repository=demo-org%2Fmobile&product=Actions&sku=actions_macos&cost_center_id=none"
+	want := "enterprises/acme/settings/billing/usage/summary?year=2026&month=4&organization=demo-org&repository=demo-org%2Fmobile&product=Actions&sku=actions_macos&cost_center_id=none"
 	if got != want {
 		t.Fatalf("endpoint = %q, want %q", got, want)
 	}
@@ -130,6 +149,27 @@ func TestDefaultCachePathIgnoresRelativeXDGCacheHome(t *testing.T) {
 	want := filepath.Join(home, ".cache", appName, "cache.db")
 	if got := defaultCachePath(); got != want {
 		t.Fatalf("default cache path = %q, want %q", got, want)
+	}
+}
+
+func TestOpenCacheConfiguresConcurrentSQLiteAccess(t *testing.T) {
+	cache := openTestCache(t)
+	defer cache.Close()
+
+	var mode string
+	if err := cache.db.QueryRow("pragma journal_mode").Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.EqualFold(mode, "wal") {
+		t.Fatalf("journal_mode = %q, want wal", mode)
+	}
+
+	var timeout int
+	if err := cache.db.QueryRow("pragma busy_timeout").Scan(&timeout); err != nil {
+		t.Fatal(err)
+	}
+	if timeout < 5000 {
+		t.Fatalf("busy_timeout = %d, want at least 5000", timeout)
 	}
 }
 
@@ -203,6 +243,9 @@ func TestSummaryGroupsByWorkflowAndRunner(t *testing.T) {
 	}
 	if len(summary.Groups) != 2 {
 		t.Fatalf("groups = %d, want 2", len(summary.Groups))
+	}
+	if summary.Groups[0].Runs != 1 {
+		t.Fatalf("first group runs = %d, want 1", summary.Groups[0].Runs)
 	}
 	if summary.Groups[0].Values["runner-image"] != "macos-15" {
 		t.Fatalf("first group = %#v, want macos group first", summary.Groups[0])

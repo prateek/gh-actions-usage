@@ -26,6 +26,12 @@ build:
 	mkdir -p bin
 	go build -o bin/$(BIN) .
 
+.PHONY: build-check
+build-check:
+	@tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	go build -o "$$tmp/$(BIN)" .
+
 .PHONY: install-local
 install-local: build
 	mkdir -p $(PREFIX)/bin
@@ -40,6 +46,15 @@ install-gh-local:
 fmt:
 	gofmt -w *.go
 
+.PHONY: fmt-check
+fmt-check:
+	@files="$$(gofmt -l *.go)"; \
+	if [ -n "$$files" ]; then \
+		echo "gofmt needed:" >&2; \
+		echo "$$files" >&2; \
+		exit 1; \
+	fi
+
 .PHONY: coverage
 coverage:
 	@tmp="$$(mktemp)"; \
@@ -50,7 +65,7 @@ coverage:
 	awk -v total="$$total" -v min="$(COVERAGE_MIN)" 'BEGIN { if (total + 0 < min + 0) { printf("coverage %.1f%% below %.1f%%\n", total, min); exit 1 } printf("coverage %.1f%% meets %.1f%%\n", total, min) }'
 
 .PHONY: check
-check: fmt test coverage build
+check: fmt-check test coverage build-check
 	git diff --check
 
 .PHONY: docs-check

@@ -71,6 +71,29 @@ func TestRunHelpRoutingAndUsageErrors(t *testing.T) {
 	}
 }
 
+func TestRefreshActionsRespectsZeroDayWindow(t *testing.T) {
+	cache := openTestCache(t)
+	defer cache.Close()
+	client := &exactClient{responses: map[string]string{
+		"user": `{"login":"octo"}`,
+		"user/repos?visibility=all&affiliation=owner&sort=full_name&page=1&per_page=100": `[
+			{"id":1,"name":"app","full_name":"octo/app","private":false,"owner":{"login":"octo","type":"User"}}
+		]`,
+		"repos/octo/app/actions/runs?per_page=100&created=%3E%3D2026-04-24&page=1&per_page=100": `{"workflow_runs":[]}`,
+	}}
+	app := &App{stdout: io.Discard, stderr: io.Discard, cache: cache, client: client, now: fixedNow}
+
+	if _, _, err := app.refreshActions(t.Context(), IngestOptions{Account: "@me", Days: 0, DaysSet: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range client.requests {
+		if strings.Contains(request, "created=%3E%3D2026-04-24") {
+			return
+		}
+	}
+	t.Fatalf("requests = %#v, want today created query", client.requests)
+}
+
 func TestFlagParseErrorsAreReturned(t *testing.T) {
 	cache := openTestCache(t)
 	defer cache.Close()
@@ -114,6 +137,17 @@ func TestAuthSourceHonorsTokenPrecedence(t *testing.T) {
 	if got := authSource(); got != "gh" {
 		t.Fatalf("authSource without tokens = %q", got)
 	}
+
+	t.Setenv("GH_ENTERPRISE_TOKEN", "enterprise-token")
+	if got := authSource(); got != "env:GH_ENTERPRISE_TOKEN" {
+		t.Fatalf("authSource with GH_ENTERPRISE_TOKEN = %q", got)
+	}
+	t.Setenv("GH_ENTERPRISE_TOKEN", "")
+	t.Setenv("GITHUB_ENTERPRISE_TOKEN", "enterprise-token")
+	if got := authSource(); got != "env:GITHUB_ENTERPRISE_TOKEN" {
+		t.Fatalf("authSource with GITHUB_ENTERPRISE_TOKEN = %q", got)
+	}
+	t.Setenv("GITHUB_ENTERPRISE_TOKEN", "")
 }
 
 func TestDoctorCommandReportsAPIAuthAndCacheState(t *testing.T) {
@@ -353,10 +387,25 @@ func TestCacheCommandsPathStatsAndClear(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := app.Run(t.Context(), []string{"cache", "clear"}); err != nil {
+	if err := app.Run(t.Context(), []string{"cache", "clear", "--help"}); err != nil {
 		t.Fatal(err)
 	}
 	stats, err := cache.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats["jobs"] != 2 {
+		t.Fatalf("stats after cache clear --help = %#v, want rows preserved", stats)
+	}
+	if !strings.Contains(out.String(), "usage: cache path|stats|clear") {
+		t.Fatalf("cache clear help output = %q", out.String())
+	}
+
+	out.Reset()
+	if err := app.Run(t.Context(), []string{"cache", "clear"}); err != nil {
+		t.Fatal(err)
+	}
+	stats, err = cache.Stats()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,6 +661,40 @@ func TestRunMainCoversStartupAndErrorPaths(t *testing.T) {
 		t.Fatalf("runMain output = %s", out.String())
 	}
 
+	openCacheFunc = func(path string) (*Cache, error) {
+		return nil, errors.New("cache should not open for help")
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := runMain(t.Context(), []string{"help"}, &out, &errOut); code != 0 {
+		t.Fatalf("runMain help code = %d stderr=%q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "gh actions-usage: cached GitHub Actions") {
+		t.Fatalf("runMain help output = %q", out.String())
+	}
+	openCacheFunc = oldOpen
+
+	openCacheFunc = func(path string) (*Cache, error) {
+		return nil, errors.New("cache should not open for subcommand help")
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"cache", "clear", "--help"}, "usage: cache path|stats|clear"},
+		{[]string{"summary", "--help"}, "usage: summary"},
+	} {
+		out.Reset()
+		errOut.Reset()
+		if code := runMain(t.Context(), tc.args, &out, &errOut); code != 0 {
+			t.Fatalf("runMain %v code = %d stderr=%q", tc.args, code, errOut.String())
+		}
+		if !strings.Contains(out.String(), tc.want) {
+			t.Fatalf("runMain %v output = %q, want %q", tc.args, out.String(), tc.want)
+		}
+	}
+	openCacheFunc = oldOpen
+
 	restClientFunc = func() (APIClient, error) {
 		return nil, errors.New("gh auth unavailable")
 	}
@@ -634,7 +717,7 @@ func TestRunMainCoversStartupAndErrorPaths(t *testing.T) {
 		return nil, errors.New("cache boom")
 	}
 	errOut.Reset()
-	if code := runMain(t.Context(), []string{"help"}, io.Discard, &errOut); code != 1 {
+	if code := runMain(t.Context(), []string{"doctor"}, io.Discard, &errOut); code != 1 {
 		t.Fatalf("runMain cache error code = %d", code)
 	}
 	if !strings.Contains(errOut.String(), "open cache: cache boom") {
@@ -662,12 +745,24 @@ func TestWebHandlerErrorsAndLimits(t *testing.T) {
 	if limited.Code != http.StatusOK {
 		t.Fatalf("jobs status = %d", limited.Code)
 	}
+	if got := limited.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("jobs content-type = %q, want application/json", got)
+	}
 	var jobs []JobRecord
 	if err := json.Unmarshal(limited.Body.Bytes(), &jobs); err != nil {
 		t.Fatalf("jobs output is not JSON: %s", limited.Body.String())
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("limited jobs = %d, want 1", len(jobs))
+	}
+
+	summaryOK := httptest.NewRecorder()
+	handler.ServeHTTP(summaryOK, httptest.NewRequest(http.MethodGet, "/api/summary", nil))
+	if summaryOK.Code != http.StatusOK {
+		t.Fatalf("summary status = %d", summaryOK.Code)
+	}
+	if got := summaryOK.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("summary content-type = %q, want application/json", got)
 	}
 
 	scoped, err := app.scopedJobs(WebScope{Repos: []Repo{{FullName: "octo/app"}, {FullName: "demo-org/mobile"}}}, 1)
@@ -809,6 +904,16 @@ func TestSummariesHandleNoGroupsAndTieBreaks(t *testing.T) {
 	if len(groups) != 2 || groups[0].Values["repo"] != "a/repo" {
 		t.Fatalf("summary tie groups = %#v", groups)
 	}
+
+	jobs = []JobRecord{
+		{Repo: "octo/app", RunID: 1, DurationSecs: 60, Conclusion: "success"},
+		{Repo: "octo/app", RunID: 1, DurationSecs: 30, Conclusion: "success"},
+		{Repo: "octo/app", RunID: 2, DurationSecs: 10, Conclusion: "failure"},
+	}
+	groups = summarize(jobs, []string{"repo"})
+	if len(groups) != 1 || groups[0].Runs != 2 {
+		t.Fatalf("summary runs = %#v, want two distinct runs", groups)
+	}
 }
 
 func TestValidationFallbackAndRunnerBranches(t *testing.T) {
@@ -836,8 +941,8 @@ func TestValidationFallbackAndRunnerBranches(t *testing.T) {
 		t.Fatal("createdQuery accepted invalid until")
 	}
 
-	if got := reportFilters("", "", "", 0, fixedNow()); got.Since != "2026-03-25" {
-		t.Fatalf("reportFilters default = %#v", got)
+	if got := reportFilters("", "", "", 0, fixedNow()); got.Since != "2026-04-24" {
+		t.Fatalf("reportFilters today = %#v", got)
 	}
 	if got := filterRepos(nil, "octo/app"); got != nil {
 		t.Fatalf("filterRepos empty = %#v", got)
